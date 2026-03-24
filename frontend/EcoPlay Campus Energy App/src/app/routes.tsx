@@ -19,7 +19,7 @@ function OperatorLayout({ children }: { children: React.ReactNode }) {
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-[100dvh] bg-slate-100 px-0 py-0 sm:px-4 sm:py-5">
-      <div className="w-full max-w-md h-[100dvh] sm:h-[calc(100dvh-2.5rem)] mx-auto bg-white flex flex-col overflow-hidden shadow-none sm:rounded-[2rem] sm:shadow-xl">
+      <div className="w-full max-w-sm md:max-w-4xl xl:max-w-6xl h-[100dvh] sm:h-[calc(100dvh-2.5rem)] mx-auto bg-white flex flex-col overflow-hidden shadow-none sm:rounded-[2rem] sm:shadow-xl">
         <div className="flex-1 overflow-hidden min-h-0">{children}</div>
         <BottomNav publicOnly />
       </div>

@@ -53,7 +53,6 @@ export function VotePage() {
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
   const buildingParam = searchParams.get('building');
   const isPublicView = location.pathname.startsWith('/user');
-  const hasPresetBuilding = Boolean(buildingParam);
 
   async function loadBuildings(preferredBuildingId?: number | null) {
     try {
@@ -184,7 +183,7 @@ export function VotePage() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full overflow-y-auto bg-white">
       <div className={`flex ${isPublicView ? 'flex-col' : 'items-center justify-center'} bg-white border-b border-gray-200 gap-2 px-4 py-4 sm:gap-3 ${isPublicView ? '' : 'sm:py-4'}`}>
         <img src={HKUSTLogo} alt="HKUST Logo" className="h-10 sm:h-12 mx-auto" />
         <div className="text-center text-base leading-tight sm:text-lg text-gray-700">
@@ -196,27 +195,23 @@ export function VotePage() {
         <h1 className={`${isPublicView ? 'text-3xl' : 'text-2xl sm:text-3xl'} leading-tight font-semibold text-gray-800`}>
           HKUST EcoPlay - Student Environmental Feedback
         </h1>
-        {isPublicView && hasPresetBuilding ? (
-          <p className="mt-3 text-base font-medium text-gray-700">{selectedBuilding?.name ?? buildingParam}</p>
-        ) : (
-          <div className="mt-3 space-y-2 sm:flex sm:items-center sm:justify-center sm:gap-3 sm:space-y-0">
-            <label htmlFor="building-select" className="text-sm text-gray-700">
-              Building
-            </label>
-            <select
-              id="building-select"
-              value={selectedBuildingId ?? ''}
-              onChange={(event) => setSelectedBuildingId(Number(event.target.value))}
-              className={`rounded-md border border-blue-200 bg-white text-gray-800 w-full sm:w-auto ${isPublicView ? 'px-4 py-3 text-base' : 'px-3 py-2 text-sm sm:text-base'}`}
-            >
-              {buildings.map((building) => (
-                <option key={building.id} value={building.id}>
-                  {building.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="mt-3 space-y-2 sm:flex sm:items-center sm:justify-center sm:gap-3 sm:space-y-0">
+          <label htmlFor="building-select" className="text-sm text-gray-700">
+            Building
+          </label>
+          <select
+            id="building-select"
+            value={selectedBuildingId ?? ''}
+            onChange={(event) => setSelectedBuildingId(Number(event.target.value))}
+            className={`rounded-md border border-blue-200 bg-white text-gray-800 w-full sm:w-auto ${isPublicView ? 'px-4 py-3 text-base' : 'px-3 py-2 text-sm sm:text-base'}`}
+          >
+            {buildings.map((building) => (
+              <option key={building.id} value={building.id}>
+                {building.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className={`bg-gray-50 grid ${isPublicView ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-3'} gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 sm:py-5`}>

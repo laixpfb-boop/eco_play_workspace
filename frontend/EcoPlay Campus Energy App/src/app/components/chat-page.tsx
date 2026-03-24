@@ -300,25 +300,26 @@ export function ChatPage() {
           <p className={`text-sm ${isPublicView ? 'text-green-50 text-center' : 'text-green-50'}`}>{statusMessage}</p>
           {isPublicView ? (
             <div className="grid grid-cols-1 gap-2 text-left">
-              <div className="rounded-2xl bg-white/12 border border-white/15 px-4 py-3">
-                <div className="text-xs uppercase tracking-wide text-green-100">Building</div>
-                <div className="mt-1 text-base font-semibold text-white">
-                  {selectedBuilding?.name ?? 'Not selected'}
-                </div>
-              </div>
-              {hasPresetRoom ? (
-                <div className="rounded-2xl bg-white/12 border border-white/15 px-4 py-3">
-                  <div className="text-xs uppercase tracking-wide text-green-100">Room / Area</div>
-                  <div className="mt-1 text-base font-semibold text-white">{roomLabel || roomParam}</div>
-                </div>
-              ) : (
-                <input
-                  value={roomLabel}
-                  onChange={(event) => setRoomLabel(event.target.value)}
-                  placeholder="Room / Area"
+              <label className="block">
+                <span className="sr-only">Building</span>
+                <select
+                  value={selectedBuildingId ?? ''}
+                  onChange={(event) => handleBuildingChange(Number(event.target.value))}
                   className="w-full rounded-2xl px-4 py-3 text-sm text-gray-900"
-                />
-              )}
+                >
+                  {buildings.map((building) => (
+                    <option key={building.id} value={building.id}>
+                      {building.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <input
+                value={roomLabel}
+                onChange={(event) => setRoomLabel(event.target.value)}
+                placeholder="Room / Area"
+                className="w-full rounded-2xl px-4 py-3 text-sm text-gray-900"
+              />
             </div>
           ) : (
             <>
