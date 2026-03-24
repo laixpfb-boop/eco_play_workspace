@@ -231,19 +231,19 @@ export function VotePage() {
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
       <div className="flex-1 min-h-0 overflow-y-auto">
-      <div className={`flex ${isPublicView ? 'flex-col' : 'items-center justify-center'} bg-white border-b border-gray-200 gap-2 px-4 py-4 sm:gap-3 ${isPublicView ? '' : 'sm:py-4'}`}>
-        <img src={HKUSTLogo} alt="HKUST Logo" className="h-10 sm:h-12 mx-auto" />
-        <div className="text-center text-base leading-tight sm:text-lg text-gray-700">
+      <div className={`flex ${isPublicView ? 'flex-col' : 'items-center justify-center'} bg-white border-b border-gray-200 gap-2 px-4 ${isPublicView ? 'py-2' : 'py-4 sm:gap-3 sm:py-4'}`}>
+        <img src={HKUSTLogo} alt="HKUST Logo" className={`${isPublicView ? 'h-8' : 'h-10 sm:h-12'} mx-auto`} />
+        <div className={`text-center leading-tight text-gray-700 ${isPublicView ? 'text-sm' : 'text-base sm:text-lg'}`}>
           Student Sustainable Smart Campus Living Lab
         </div>
       </div>
 
-      <div className={`bg-blue-100 text-center px-4 py-4 sm:px-6 ${isPublicView ? '' : 'sm:py-5'}`}>
-        <h1 className={`${isPublicView ? 'text-3xl' : 'text-2xl sm:text-3xl'} leading-tight font-semibold text-gray-800`}>
+      <div className={`bg-blue-100 text-center px-4 sm:px-6 ${isPublicView ? 'py-3' : 'py-4 sm:py-5'}`}>
+        <h1 className={`${isPublicView ? 'text-2xl' : 'text-2xl sm:text-3xl'} leading-tight font-semibold text-gray-800`}>
           HKUST EcoPlay - Student Environmental Feedback
         </h1>
-        <div className="mt-3 space-y-2 sm:flex sm:items-center sm:justify-center sm:gap-3 sm:space-y-0">
-          <label htmlFor="building-select" className="text-sm text-gray-700">
+        <div className={`space-y-2 sm:flex sm:items-center sm:justify-center sm:gap-3 sm:space-y-0 ${isPublicView ? 'mt-2' : 'mt-3'}`}>
+          <label htmlFor="building-select" className={`text-gray-700 ${isPublicView ? 'text-xs' : 'text-sm'}`}>
             Building
           </label>
           <select
@@ -255,7 +255,7 @@ export function VotePage() {
               setSelectedBuildingId(nextBuildingId);
               updateBuildingSearchParam(nextBuilding);
             }}
-            className={`rounded-md border border-blue-200 bg-white text-gray-800 w-full sm:w-auto ${isPublicView ? 'px-4 py-3 text-base' : 'px-3 py-2 text-sm sm:text-base'}`}
+            className={`rounded-md border border-blue-200 bg-white text-gray-800 w-full sm:w-auto ${isPublicView ? 'px-4 py-2 text-sm' : 'px-3 py-2 text-sm sm:text-base'}`}
           >
             {buildings.map((building) => (
               <option key={building.id} value={building.id}>
@@ -266,20 +266,20 @@ export function VotePage() {
         </div>
       </div>
 
-      <div className={`bg-gray-50 grid ${isPublicView ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-3'} gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 py-4 sm:py-5`}>
-        <div className="flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 py-4 sm:py-3">
+      <div className={`bg-gray-50 grid ${isPublicView ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-3'} gap-3 sm:gap-4 px-4 sm:px-6 lg:px-8 ${isPublicView ? 'py-3' : 'py-4 sm:py-5'}`}>
+        <div className={`flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 ${isPublicView ? 'py-3' : 'py-4 sm:py-3'}`}>
           <Thermometer className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
           <span className={`${isPublicView ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'} text-gray-800`}>
             {isLoading ? '--' : `${sensor.temperature.toFixed(1)}°C`}
           </span>
         </div>
-        <div className="flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 py-4 sm:py-3">
+        <div className={`flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 ${isPublicView ? 'py-3' : 'py-4 sm:py-3'}`}>
           <Droplets className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
           <span className={`${isPublicView ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'} text-gray-800`}>
             {isLoading ? '--' : `${sensor.humidity.toFixed(1)}%`}
           </span>
         </div>
-        <div className="flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 py-4 sm:py-3">
+        <div className={`flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 ${isPublicView ? 'py-3' : 'py-4 sm:py-3'}`}>
           <Wind className="w-7 h-7 sm:w-8 sm:h-8 text-green-600" />
           <span className={`${isPublicView ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'} text-gray-800`}>
             {isPublicView ? '650 ppm' : selectedBuilding ? `ID ${selectedBuilding.id}` : '--'}
