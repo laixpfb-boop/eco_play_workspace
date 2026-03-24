@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Send, Bot, Trash2, PlusSquare } from 'lucide-react';
 import { BUILDINGS_UPDATED_EVENT } from '@/app/building-events';
+import { getBuildingFromParam } from '@/app/url-context';
 import {
   type Building,
   type ChatMessageRecord,
@@ -16,6 +18,7 @@ import {
 const SESSION_STORAGE_KEY = 'ecoplay_chat_session_id';
 
 export function ChatPage() {
+  const [searchParams] = useSearchParams();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [roomLabel, setRoomLabel] = useState('');
@@ -26,6 +29,8 @@ export function ChatPage() {
   const [statusMessage, setStatusMessage] = useState('Smart chat can help explain comfort data and create service requests from room issues.');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState('');
+  const buildingParam = searchParams.get('building');
+  const roomParam = searchParams.get('room');
 
   function resetChatSession(nextBuildingId: number | null) {
     setSessionId('');
@@ -48,12 +53,15 @@ export function ChatPage() {
       return;
     }
 
+    const buildingFromUrl = getBuildingFromParam(buildingList, buildingParam);
+
     const nextSelectedId =
-      preferredBuildingId && buildingList.some((building) => building.id === preferredBuildingId)
+      buildingFromUrl?.id ??
+      (preferredBuildingId && buildingList.some((building) => building.id === preferredBuildingId)
         ? preferredBuildingId
         : selectedBuildingId && buildingList.some((building) => building.id === selectedBuildingId)
         ? selectedBuildingId
-        : buildingList[0].id;
+        : buildingList[0].id);
 
     if (!buildingList.some((building) => building.id === selectedBuildingId)) {
       resetChatSession(nextSelectedId);
@@ -74,8 +82,12 @@ export function ChatPage() {
         }
 
         setBuildings(buildingList);
+        const buildingFromUrl = getBuildingFromParam(buildingList, buildingParam);
         if (buildingList.length > 0) {
-          setSelectedBuildingId(buildingList[0].id);
+          setSelectedBuildingId(buildingFromUrl?.id ?? buildingList[0].id);
+        }
+        if (roomParam) {
+          setRoomLabel(roomParam);
         }
 
         const savedSessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
@@ -88,8 +100,10 @@ export function ChatPage() {
             setSessionId(savedSessionId);
             setMessages(history.messages);
             setOpenRequests(history.openRequests);
-            setRoomLabel(history.session.room_label ?? '');
-            if (history.session.building_id) {
+            setRoomLabel(roomParam ?? history.session.room_label ?? '');
+            if (buildingFromUrl?.id) {
+              setSelectedBuildingId(buildingFromUrl.id);
+            } else if (history.session.building_id) {
               setSelectedBuildingId(history.session.building_id);
             }
           } catch {
@@ -107,7 +121,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [buildingParam, roomParam]);
 
   useEffect(() => {
     async function handleBuildingsUpdated() {
@@ -122,7 +136,7 @@ export function ChatPage() {
     return () => {
       window.removeEventListener(BUILDINGS_UPDATED_EVENT, handleBuildingsUpdated);
     };
-  }, [selectedBuildingId, buildings, sessionId, messages]);
+  }, [selectedBuildingId, buildings, sessionId, messages, buildingParam]);
 
   async function ensureSessionId() {
     if (sessionId) {

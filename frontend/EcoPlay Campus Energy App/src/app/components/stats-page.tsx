@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { type StatsBuilding, getStats } from '@/api/ecoApi';
+import { normalizeBuildingValue } from '@/app/url-context';
 
 export function StatsPage() {
+  const [searchParams] = useSearchParams();
   const [buildingData, setBuildingData] = useState<StatsBuilding[]>([]);
   const [currentBuilding, setCurrentBuilding] = useState<StatsBuilding | null>(null);
   const [error, setError] = useState('');
+  const buildingParam = searchParams.get('building');
 
   useEffect(() => {
     let cancelled = false;
@@ -18,10 +22,16 @@ export function StatsPage() {
         }
 
         setBuildingData(stats.buildingRankings);
+        const preferredBuilding = buildingParam
+          ? stats.buildingRankings.find(
+              (building) => normalizeBuildingValue(building.name) === normalizeBuildingValue(buildingParam)
+            ) ?? null
+          : null;
         setCurrentBuilding(
-          Object.keys(stats.currentBuilding).length > 0
-            ? (stats.currentBuilding as StatsBuilding)
-            : stats.buildingRankings[0] ?? null
+          preferredBuilding ??
+            (Object.keys(stats.currentBuilding).length > 0
+              ? (stats.currentBuilding as StatsBuilding)
+              : stats.buildingRankings[0] ?? null)
         );
       } catch (loadError) {
         if (!cancelled) {
@@ -34,7 +44,7 @@ export function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [buildingParam]);
 
   if (error) {
     return <div className="flex h-full items-center justify-center bg-white text-red-600">{error}</div>;

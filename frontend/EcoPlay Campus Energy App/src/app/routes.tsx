@@ -5,7 +5,7 @@ import { ChatPage } from './components/chat-page';
 import { BottomNav } from './components/bottom-nav';
 import { SettingsPage } from './components/settings-page';
 
-function Layout({ children }: { children: React.ReactNode }) {
+function OperatorLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="w-[1024px] h-[600px] mx-auto bg-white flex flex-col shadow-2xl">
       <div className="flex-1 overflow-hidden">
@@ -16,37 +16,70 @@ function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function PublicLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="w-full max-w-md min-h-screen mx-auto bg-white flex flex-col shadow-xl">
+      <div className="flex-1 overflow-hidden">{children}</div>
+      <BottomNav publicOnly />
+    </div>
+  );
+}
+
 export const router = createBrowserRouter([
   {
     path: '/',
     element: (
-      <Layout>
+      <OperatorLayout>
         <VotePage />
-      </Layout>
+      </OperatorLayout>
     ),
   },
   {
     path: '/stats',
     element: (
-      <Layout>
+      <OperatorLayout>
         <StatsPage />
-      </Layout>
+      </OperatorLayout>
     ),
   },
   {
     path: '/chat',
     element: (
-      <Layout>
+      <OperatorLayout>
         <ChatPage />
-      </Layout>
+      </OperatorLayout>
     ),
   },
   {
     path: '/settings',
     element: (
-      <Layout>
+      <OperatorLayout>
         <SettingsPage />
-      </Layout>
+      </OperatorLayout>
+    ),
+  },
+  {
+    path: '/user',
+    element: (
+      <PublicLayout>
+        <VotePage />
+      </PublicLayout>
+    ),
+  },
+  {
+    path: '/user/stats',
+    element: (
+      <PublicLayout>
+        <StatsPage />
+      </PublicLayout>
+    ),
+  },
+  {
+    path: '/user/chat',
+    element: (
+      <PublicLayout>
+        <ChatPage />
+      </PublicLayout>
     ),
   },
 ]);

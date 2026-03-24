@@ -1,0 +1,14 @@
+[Unit]
+Description=EcoPlay Flask Backend
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/eco_play_workspace
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/eco_play_workspace/venv/bin/python /opt/eco_play_workspace/backend/src/app.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

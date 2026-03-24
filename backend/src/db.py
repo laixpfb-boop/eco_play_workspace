@@ -37,7 +37,8 @@ def init_db():
         ('Academic Building',),
         ('Business Building',),
         ('Student Union',),
-        ('Shaw Auditorium',)
+        ('Shaw Auditorium',),
+        ('Sustainability Office',),
     ]
     conn.executemany('INSERT OR IGNORE INTO buildings (name) VALUES (?)', default_buildings)
     

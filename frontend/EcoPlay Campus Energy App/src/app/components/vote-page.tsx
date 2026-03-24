@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Thermometer, Droplets, Wind } from 'lucide-react';
 import HKUSTLogo from '../../imports/Hong_Kong_University_of_Science_and_Technology_symbol.svg';
 import { BUILDINGS_UPDATED_EVENT } from '@/app/building-events';
+import { getBuildingFromParam } from '@/app/url-context';
 import {
   type Building,
   type BuildingVotes,
@@ -38,6 +40,7 @@ function buildEmptyVotes(buildingId: number): BuildingVotes {
 }
 
 export function VotePage() {
+  const [searchParams] = useSearchParams();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [votes, setVotes] = useState<BuildingVotes>(emptyVotes);
@@ -47,6 +50,7 @@ export function VotePage() {
   const [error, setError] = useState('');
 
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
+  const buildingParam = searchParams.get('building');
 
   async function loadBuildings(preferredBuildingId?: number | null) {
     try {
@@ -59,12 +63,15 @@ export function VotePage() {
         return;
       }
 
+      const buildingFromUrl = getBuildingFromParam(buildingList, buildingParam);
+
       const nextSelectedId =
-        preferredBuildingId && buildingList.some((building) => building.id === preferredBuildingId)
+        buildingFromUrl?.id ??
+        (preferredBuildingId && buildingList.some((building) => building.id === preferredBuildingId)
           ? preferredBuildingId
           : selectedBuildingId && buildingList.some((building) => building.id === selectedBuildingId)
           ? selectedBuildingId
-          : buildingList[0].id;
+          : buildingList[0].id);
       setSelectedBuildingId(nextSelectedId);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load buildings');
@@ -84,7 +91,7 @@ export function VotePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [buildingParam]);
 
   useEffect(() => {
     function handleBuildingsUpdated() {
@@ -95,7 +102,7 @@ export function VotePage() {
     return () => {
       window.removeEventListener(BUILDINGS_UPDATED_EVENT, handleBuildingsUpdated);
     };
-  }, [selectedBuildingId, buildings]);
+  }, [selectedBuildingId, buildings, buildingParam]);
 
   useEffect(() => {
     if (!selectedBuilding) {
