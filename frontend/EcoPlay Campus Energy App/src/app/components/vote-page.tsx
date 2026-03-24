@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
 import { Thermometer, Droplets, Wind } from 'lucide-react';
 import HKUSTLogo from '../../imports/Hong_Kong_University_of_Science_and_Technology_symbol.svg';
 import { BUILDINGS_UPDATED_EVENT } from '@/app/building-events';
@@ -40,6 +40,7 @@ function buildEmptyVotes(buildingId: number): BuildingVotes {
 }
 
 export function VotePage() {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
@@ -51,6 +52,7 @@ export function VotePage() {
 
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
   const buildingParam = searchParams.get('building');
+  const isPublicView = location.pathname.startsWith('/user');
 
   async function loadBuildings(preferredBuildingId?: number | null) {
     try {
@@ -182,14 +184,18 @@ export function VotePage() {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      <div className="flex items-center justify-center gap-3 py-3 bg-white border-b border-gray-200">
-        <img src={HKUSTLogo} alt="HKUST Logo" className="h-12" />
-        <div className="text-lg text-gray-700">Student Sustainable Smart Campus Living Lab</div>
+      <div className={`flex items-center justify-center bg-white border-b border-gray-200 ${isPublicView ? 'gap-2 px-4 py-3' : 'gap-3 py-3'}`}>
+        <img src={HKUSTLogo} alt="HKUST Logo" className={isPublicView ? 'h-10' : 'h-12'} />
+        <div className={`${isPublicView ? 'text-base leading-tight' : 'text-lg'} text-gray-700`}>
+          Student Sustainable Smart Campus Living Lab
+        </div>
       </div>
 
-      <div className="bg-blue-100 py-3 px-6 text-center">
-        <h1 className="text-xl text-gray-800">HKUST EcoPlay - Student Environmental Feedback</h1>
-        <div className="mt-2 flex items-center justify-center gap-3">
+      <div className={`bg-blue-100 text-center ${isPublicView ? 'px-4 py-4' : 'px-6 py-3'}`}>
+        <h1 className={`${isPublicView ? 'text-3xl leading-tight font-semibold' : 'text-xl'} text-gray-800`}>
+          HKUST EcoPlay - Student Environmental Feedback
+        </h1>
+        <div className={`mt-3 ${isPublicView ? 'space-y-2' : 'flex items-center justify-center gap-3'}`}>
           <label htmlFor="building-select" className="text-sm text-gray-700">
             Building
           </label>
@@ -197,7 +203,7 @@ export function VotePage() {
             id="building-select"
             value={selectedBuildingId ?? ''}
             onChange={(event) => setSelectedBuildingId(Number(event.target.value))}
-            className="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-800"
+            className={`rounded-md border border-blue-200 bg-white text-gray-800 ${isPublicView ? 'w-full px-4 py-3 text-base' : 'px-3 py-2 text-sm'}`}
           >
             {buildings.map((building) => (
               <option key={building.id} value={building.id}>
@@ -208,62 +214,64 @@ export function VotePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 px-8 py-5 bg-gray-50">
-        <div className="flex items-center justify-center gap-2 bg-white py-3 rounded-lg border border-gray-200">
-          <Thermometer className="w-8 h-8 text-blue-500" />
-          <span className="text-3xl text-gray-800">
+      <div className={`bg-gray-50 ${isPublicView ? 'grid grid-cols-1 gap-3 px-4 py-4' : 'grid grid-cols-3 gap-4 px-8 py-5'}`}>
+        <div className={`flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 ${isPublicView ? 'py-4' : 'py-3'}`}>
+          <Thermometer className={`${isPublicView ? 'w-7 h-7' : 'w-8 h-8'} text-blue-500`} />
+          <span className={`${isPublicView ? 'text-2xl' : 'text-3xl'} text-gray-800`}>
             {isLoading ? '--' : `${sensor.temperature.toFixed(1)}°C`}
           </span>
         </div>
-        <div className="flex items-center justify-center gap-2 bg-white py-3 rounded-lg border border-gray-200">
-          <Droplets className="w-8 h-8 text-blue-500" />
-          <span className="text-3xl text-gray-800">
+        <div className={`flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 ${isPublicView ? 'py-4' : 'py-3'}`}>
+          <Droplets className={`${isPublicView ? 'w-7 h-7' : 'w-8 h-8'} text-blue-500`} />
+          <span className={`${isPublicView ? 'text-2xl' : 'text-3xl'} text-gray-800`}>
             {isLoading ? '--' : `${sensor.humidity.toFixed(1)}%`}
           </span>
         </div>
-        <div className="flex items-center justify-center gap-2 bg-white py-3 rounded-lg border border-gray-200">
-          <Wind className="w-8 h-8 text-green-600" />
-          <span className="text-2xl text-gray-800">{selectedBuilding ? `ID ${selectedBuilding.id}` : '--'}</span>
+        <div className={`flex items-center justify-center gap-2 bg-white rounded-lg border border-gray-200 ${isPublicView ? 'py-4' : 'py-3'}`}>
+          <Wind className={`${isPublicView ? 'w-7 h-7' : 'w-8 h-8'} text-green-600`} />
+          <span className={`${isPublicView ? 'text-xl' : 'text-2xl'} text-gray-800`}>
+            {selectedBuilding ? `ID ${selectedBuilding.id}` : '--'}
+          </span>
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center gap-6 px-8 py-1 min-h-0">
+      <div className={`flex-1 min-h-0 ${isPublicView ? 'grid grid-cols-1 gap-4 px-4 py-4 content-start' : 'flex items-center justify-center gap-6 px-8 py-1'}`}>
         <button
           onClick={() => handleVote('too_cold')}
           disabled={!selectedBuilding || isSubmitting}
-          className="flex flex-col items-center justify-center gap-3 bg-blue-400 hover:bg-blue-500 disabled:opacity-60 text-white rounded-2xl p-6 h-40 flex-1 transition-colors"
+          className={`flex flex-col items-center justify-center gap-3 bg-blue-400 hover:bg-blue-500 disabled:opacity-60 text-white rounded-2xl transition-colors ${isPublicView ? 'px-6 py-7 min-h-[160px]' : 'p-6 h-40 flex-1'}`}
         >
-          <div className="text-5xl">❄️</div>
-          <div className="text-3xl font-bold">Too Cold</div>
+          <div className={isPublicView ? 'text-4xl' : 'text-5xl'}>❄️</div>
+          <div className={`${isPublicView ? 'text-2xl' : 'text-3xl'} font-bold`}>Too Cold</div>
           <div className="text-sm">{votes.too_cold_percent}%</div>
         </button>
 
         <button
           onClick={() => handleVote('comfort')}
           disabled={!selectedBuilding || isSubmitting}
-          className="flex flex-col items-center justify-center gap-3 bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white rounded-2xl p-6 h-40 flex-1 transition-colors"
+          className={`flex flex-col items-center justify-center gap-3 bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white rounded-2xl transition-colors ${isPublicView ? 'px-6 py-7 min-h-[160px]' : 'p-6 h-40 flex-1'}`}
         >
-          <div className="text-5xl">☀️</div>
-          <div className="text-3xl font-bold">Comfort</div>
+          <div className={isPublicView ? 'text-4xl' : 'text-5xl'}>☀️</div>
+          <div className={`${isPublicView ? 'text-2xl' : 'text-3xl'} font-bold`}>Comfort</div>
           <div className="text-sm">{votes.comfort_percent}%</div>
         </button>
 
         <button
           onClick={() => handleVote('too_warm')}
           disabled={!selectedBuilding || isSubmitting}
-          className="flex flex-col items-center justify-center gap-3 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-2xl p-6 h-40 flex-1 transition-colors"
+          className={`flex flex-col items-center justify-center gap-3 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-2xl transition-colors ${isPublicView ? 'px-6 py-7 min-h-[160px]' : 'p-6 h-40 flex-1'}`}
         >
-          <div className="text-5xl">🔥</div>
-          <div className="text-3xl font-bold">Too Warm</div>
+          <div className={isPublicView ? 'text-4xl' : 'text-5xl'}>🔥</div>
+          <div className={`${isPublicView ? 'text-2xl' : 'text-3xl'} font-bold`}>Too Warm</div>
           <div className="text-sm">{votes.too_warm_percent}%</div>
         </button>
       </div>
 
-      <div className="py-3 px-4 text-center bg-white border-t border-gray-200">
+      <div className={`text-center bg-white border-t border-gray-200 ${isPublicView ? 'px-4 py-4' : 'py-3 px-4'}`}>
         {error ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : (
-          <p className="text-base text-gray-700 leading-tight">
+          <p className={`${isPublicView ? 'text-sm leading-6' : 'text-base leading-tight'} text-gray-700`}>
             Votes Today:
             <span className="text-blue-600 font-semibold"> Too Cold: {votes.too_cold}</span>
             {' | '}

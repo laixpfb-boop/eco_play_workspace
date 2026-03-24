@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
 import { Send, Bot, Trash2, PlusSquare } from 'lucide-react';
 import { BUILDINGS_UPDATED_EVENT } from '@/app/building-events';
 import { getBuildingFromParam } from '@/app/url-context';
@@ -18,6 +18,7 @@ import {
 const SESSION_STORAGE_KEY = 'ecoplay_chat_session_id';
 
 export function ChatPage() {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
@@ -31,6 +32,7 @@ export function ChatPage() {
   const [error, setError] = useState('');
   const buildingParam = searchParams.get('building');
   const roomParam = searchParams.get('room');
+  const isPublicView = location.pathname.startsWith('/user');
 
   function resetChatSession(nextBuildingId: number | null) {
     setSessionId('');
@@ -267,24 +269,24 @@ export function ChatPage() {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      <div className="bg-green-600 text-white py-4 px-5 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">AI Energy Assistant</h1>
+      <div className={`bg-green-600 text-white border-b ${isPublicView ? 'px-4 py-4' : 'py-4 px-5'}`}>
+        <div className={`flex ${isPublicView ? 'flex-col items-stretch gap-3' : 'items-center justify-between gap-4'}`}>
+          <h1 className={`${isPublicView ? 'text-xl' : 'text-2xl'} font-bold`}>AI Energy Assistant</h1>
           <button
             type="button"
             onClick={handleNewChat}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20"
+            className={`inline-flex items-center justify-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 ${isPublicView ? 'w-full' : ''}`}
           >
             <PlusSquare className="h-4 w-4" />
             New Chat
           </button>
         </div>
-        <div className="mt-3 grid grid-cols-[1fr_180px_180px] gap-3 items-center">
+        <div className={`mt-3 ${isPublicView ? 'space-y-3' : 'grid grid-cols-[1fr_180px_180px] gap-3 items-center'}`}>
           <p className="text-sm text-green-50">{statusMessage}</p>
           <select
             value={selectedBuildingId ?? ''}
             onChange={(event) => handleBuildingChange(Number(event.target.value))}
-            className="rounded-lg px-3 py-2 text-sm text-gray-900"
+            className={`rounded-lg text-sm text-gray-900 ${isPublicView ? 'w-full px-3 py-3' : 'px-3 py-2'}`}
           >
             {buildings.map((building) => (
               <option key={building.id} value={building.id}>
@@ -296,12 +298,12 @@ export function ChatPage() {
             value={roomLabel}
             onChange={(event) => setRoomLabel(event.target.value)}
             placeholder="Room / Area"
-            className="rounded-lg px-3 py-2 text-sm text-gray-900"
+            className={`rounded-lg text-sm text-gray-900 ${isPublicView ? 'w-full px-3 py-3' : 'px-3 py-2'}`}
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50">
+      <div className={`flex-1 overflow-y-auto space-y-4 bg-gray-50 ${isPublicView ? 'px-3 py-4' : 'px-4 py-4'}`}>
         {error ? <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
         {openRequests.length > 0 ? (
@@ -313,7 +315,7 @@ export function ChatPage() {
             <div className="mt-3 space-y-2">
               {openRequests.map((request) => (
                 <div key={request.id} className="rounded-xl bg-white border border-amber-100 px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className={`flex items-start gap-3 ${isPublicView ? 'flex-col' : 'justify-between'}`}>
                     <div>
                       <div className="text-sm font-semibold text-gray-900">
                         #{request.id} · {request.request_type.replaceAll('_', ' ')}
@@ -326,7 +328,7 @@ export function ChatPage() {
                     <button
                       type="button"
                       onClick={() => handleCloseRequest(request.id)}
-                      className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      className={`rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${isPublicView ? 'w-full' : ''}`}
                     >
                       Close
                     </button>
@@ -345,7 +347,7 @@ export function ChatPage() {
 
         {messages.map((message) => (
           <div key={`${message.role}-${message.id}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`flex gap-2 max-w-[82%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className={`flex gap-2 ${isPublicView ? 'max-w-[92%]' : 'max-w-[82%]'} ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'assistant' ? 'bg-green-600' : 'bg-blue-600'}`}>
                 {message.role === 'assistant' ? <Bot className="w-5 h-5 text-white" /> : <span className="text-white font-bold">U</span>}
               </div>
@@ -375,8 +377,8 @@ export function ChatPage() {
         ))}
       </div>
 
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <div className="flex gap-2">
+      <div className={`border-t border-gray-200 bg-white ${isPublicView ? 'p-3' : 'p-4'}`}>
+        <div className="flex gap-2 items-end">
           <input
             type="text"
             value={input}
@@ -387,12 +389,12 @@ export function ChatPage() {
               }
             }}
             placeholder="Describe the room issue or ask for help..."
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500"
+            className={`flex-1 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 ${isPublicView ? 'px-4 py-3 text-base' : 'px-4 py-3'}`}
           />
           <button
             onClick={handleSend}
             disabled={isSending}
-            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-full p-3 transition-colors"
+            className={`bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-full transition-colors ${isPublicView ? 'p-3.5' : 'p-3'}`}
           >
             <Send className="w-5 h-5" />
           </button>

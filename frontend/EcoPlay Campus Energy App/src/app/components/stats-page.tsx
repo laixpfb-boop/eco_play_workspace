@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
 import { type StatsBuilding, getStats } from '@/api/ecoApi';
 import { normalizeBuildingValue } from '@/app/url-context';
 
 export function StatsPage() {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [buildingData, setBuildingData] = useState<StatsBuilding[]>([]);
   const [currentBuilding, setCurrentBuilding] = useState<StatsBuilding | null>(null);
   const [error, setError] = useState('');
   const buildingParam = searchParams.get('building');
+  const isPublicView = location.pathname.startsWith('/user');
 
   useEffect(() => {
     let cancelled = false;
@@ -55,14 +57,14 @@ export function StatsPage() {
   }
 
   return (
-    <div className="flex h-full bg-white">
-      <div className="w-1/2 flex flex-col border-r border-gray-200">
-        <div className="bg-green-600 text-white py-5 text-center">
+    <div className={`h-full bg-white ${isPublicView ? 'flex flex-col' : 'flex'}`}>
+      <div className={`${isPublicView ? 'flex flex-col border-b border-gray-200' : 'w-1/2 flex flex-col border-r border-gray-200'}`}>
+        <div className={`bg-green-600 text-white text-center ${isPublicView ? 'px-4 py-4' : 'py-5'}`}>
           <h2 className="text-xl font-bold">Current Vote Status</h2>
           <p className="text-sm opacity-90 mt-1">{currentBuilding.name}</p>
         </div>
 
-        <div className="flex-1 flex flex-col justify-center items-center p-6 bg-gradient-to-b from-green-50 to-white">
+        <div className={`flex-1 flex flex-col items-center bg-gradient-to-b from-green-50 to-white ${isPublicView ? 'p-4' : 'justify-center p-6'}`}>
           <div className="w-full max-w-sm space-y-4">
             <div className="bg-blue-400 text-white rounded-2xl p-5 shadow-lg">
               <div className="flex items-center justify-between mb-2">
@@ -114,13 +116,13 @@ export function StatsPage() {
         </div>
       </div>
 
-      <div className="w-1/2 flex flex-col">
-        <div className="bg-blue-600 text-white py-5 text-center">
+      <div className={`${isPublicView ? 'flex-1 min-h-0 flex flex-col' : 'w-1/2 flex flex-col'}`}>
+        <div className={`bg-blue-600 text-white text-center ${isPublicView ? 'px-4 py-4' : 'py-5'}`}>
           <h2 className="text-xl font-bold">Campus Vote Rankings</h2>
           <p className="text-sm opacity-90 mt-1">Comfort Level by Building</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-blue-50 to-white">
+        <div className={`flex-1 overflow-y-auto bg-gradient-to-b from-blue-50 to-white ${isPublicView ? 'p-4' : 'p-6'}`}>
           <div className="space-y-3">
             {buildingData.map((building, index) => (
               <button
