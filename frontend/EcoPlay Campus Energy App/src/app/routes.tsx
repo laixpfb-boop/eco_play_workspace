@@ -1,18 +1,64 @@
-import { createBrowserRouter } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Navigate, createBrowserRouter } from 'react-router';
 import { VotePage } from './components/vote-page';
 import { StatsPage } from './components/stats-page';
 import { ChatPage } from './components/chat-page';
 import { BottomNav } from './components/bottom-nav';
 import { SettingsPage } from './components/settings-page';
+import { OperatorLoginPage } from './components/operator-login-page';
+import { getOperatorAuthStatus } from '@/api/ecoApi';
+
+function OperatorRouteGuard({ children }: { children: React.ReactNode }) {
+  const [isChecking, setIsChecking] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkAuth() {
+      try {
+        const status = await getOperatorAuthStatus();
+        if (!cancelled) {
+          setIsAuthenticated(status.authenticated);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsAuthenticated(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsChecking(false);
+        }
+      }
+    }
+
+    checkAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isChecking) {
+    return <div className="flex h-screen items-center justify-center bg-gray-100 text-gray-600">Checking operator access...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
 
 function OperatorLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="w-full max-w-7xl h-[100dvh] mx-auto bg-white flex flex-col shadow-none md:shadow-2xl">
-      <div className="flex-1 overflow-hidden min-h-0">
-        {children}
+    <OperatorRouteGuard>
+      <div className="w-full max-w-7xl h-[100dvh] mx-auto bg-white flex flex-col shadow-none md:shadow-2xl">
+        <div className="flex-1 overflow-hidden min-h-0">
+          {children}
+        </div>
+        <BottomNav />
       </div>
-      <BottomNav />
-    </div>
+    </OperatorRouteGuard>
   );
 }
 
@@ -28,6 +74,10 @@ function PublicLayout({ children }: { children: React.ReactNode }) {
 }
 
 export const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <OperatorLoginPage />,
+  },
   {
     path: '/',
     element: (

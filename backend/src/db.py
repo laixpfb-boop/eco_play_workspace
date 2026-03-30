@@ -17,13 +17,17 @@ DEFAULT_ALGORITHM_WEIGHTS = {
 
 def get_db_connection():
     """创建数据库连接"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row  # 支持按列名访问
+    conn.execute('PRAGMA foreign_keys = ON')
+    conn.execute('PRAGMA busy_timeout = 30000')
     return conn
 
 def init_db():
     """初始化数据库（首次运行）"""
     conn = get_db_connection()
+    conn.execute('PRAGMA journal_mode = WAL')
+    conn.execute('PRAGMA synchronous = NORMAL')
     with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
         conn.executescript(f.read())
 
@@ -599,3 +603,71 @@ def delete_chat_message(message_id):
     deleted = cursor.rowcount
     conn.close()
     return deleted > 0
+
+
+def get_vote_sensor_export_rows():
+    conn = get_db_connection()
+    rows = conn.execute(
+        '''
+        WITH sensor_daily AS (
+            SELECT
+                building_id,
+                DATE(read_time) AS sensor_date,
+                ROUND(AVG(temperature), 2) AS avg_temperature,
+                ROUND(AVG(humidity), 2) AS avg_humidity,
+                COUNT(*) AS sensor_samples
+            FROM sensor_data
+            GROUP BY building_id, DATE(read_time)
+        )
+        SELECT
+            b.id AS building_id,
+            b.name AS building_name,
+            COALESCE(b.description, '') AS building_description,
+            v.vote_date,
+            v.too_cold,
+            v.comfort,
+            v.too_warm,
+            v.total,
+            sd.avg_temperature,
+            sd.avg_humidity,
+            COALESCE(sd.sensor_samples, 0) AS sensor_samples
+        FROM votes v
+        JOIN buildings b ON b.id = v.building_id
+        LEFT JOIN sensor_daily sd ON sd.building_id = v.building_id AND sd.sensor_date = v.vote_date
+        ORDER BY v.vote_date DESC, b.id ASC
+        '''
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_comfort_analysis_rows():
+    conn = get_db_connection()
+    rows = conn.execute(
+        '''
+        WITH sensor_daily AS (
+            SELECT
+                building_id,
+                DATE(read_time) AS sensor_date,
+                AVG(temperature) AS avg_temperature,
+                AVG(humidity) AS avg_humidity
+            FROM sensor_data
+            GROUP BY building_id, DATE(read_time)
+        )
+        SELECT
+            b.id AS building_id,
+            b.name AS building_name,
+            v.vote_date,
+            v.total,
+            CASE WHEN v.total > 0 THEN ROUND((v.comfort * 100.0) / v.total, 2) ELSE 0 END AS comfort_percent,
+            sd.avg_temperature,
+            sd.avg_humidity
+        FROM votes v
+        JOIN buildings b ON b.id = v.building_id
+        LEFT JOIN sensor_daily sd ON sd.building_id = v.building_id AND sd.sensor_date = v.vote_date
+        WHERE v.total > 0
+        ORDER BY v.vote_date DESC, b.id ASC
+        '''
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]

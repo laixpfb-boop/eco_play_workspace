@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { emitBuildingsUpdated } from '@/app/building-events';
 import {
   type AlgorithmWeights,
   type BuildingSettings,
+  type ComfortAnalysisResponse,
   createBuilding,
   deleteBuilding,
+  exportOperatorCsv,
+  getComfortAnalysis,
   getSettings,
+  logoutOperator,
   updateAlgorithmWeights,
   updateBuildingSettings,
 } from '@/api/ecoApi';
@@ -39,6 +44,7 @@ function normalizeBuildingForm(building?: Partial<BuildingSettings> | null) {
 }
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const [buildings, setBuildings] = useState<BuildingSettings[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [buildingForm, setBuildingForm] = useState(emptyBuildingForm);
@@ -51,15 +57,20 @@ export function SettingsPage() {
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [analysis, setAnalysis] = useState<ComfortAnalysisResponse | null>(null);
 
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
 
   async function loadSettings() {
     try {
       setError('');
-      const settings = await getSettings();
+      const [settings, analysisResponse] = await Promise.all([
+        getSettings(),
+        getComfortAnalysis(),
+      ]);
       setBuildings(settings.buildings);
       setWeights(settings.algorithmWeights);
+      setAnalysis(analysisResponse);
       if (settings.buildings.length > 0) {
         const nextSelectedId =
           selectedBuildingId && settings.buildings.some((building) => building.id === selectedBuildingId)
@@ -202,12 +213,56 @@ export function SettingsPage() {
     }
   }
 
+  async function handleExportCsv() {
+    try {
+      setError('');
+      const blob = await exportOperatorCsv();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `ecoplay-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+      setMessage('CSV export downloaded.');
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : 'Failed to export CSV');
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await logoutOperator();
+    } finally {
+      navigate('/login', { replace: true });
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
       <div className="px-4 py-4 sm:px-6 sm:py-5 space-y-5">
-        <div>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-600 mt-1">Add buildings, set default data, and tune weighted comfort parameters.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700"
+            >
+              Log Out
+            </button>
+          </div>
         </div>
 
         {message ? <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div> : null}
@@ -350,9 +405,108 @@ export function SettingsPage() {
             )}
           </form>
         </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-gray-900">Comfort Analysis</h2>
+            <p className="text-sm text-gray-600">
+              Correlation analysis between comfort votes and sensor readings, with recommended operating targets.
+            </p>
+          </div>
+
+          {analysis ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                <AnalysisCard
+                  title="Samples"
+                  value={String(analysis.sampleSize)}
+                  hint="Daily vote/sensor rows joined"
+                />
+                <AnalysisCard
+                  title="Temp Correlation"
+                  value={formatNullableNumber(analysis.correlations.temperature_to_comfort)}
+                  hint="Comfort vs temperature"
+                />
+                <AnalysisCard
+                  title="Humidity Correlation"
+                  value={formatNullableNumber(analysis.correlations.humidity_to_comfort)}
+                  hint="Comfort vs humidity"
+                />
+                <AnalysisCard
+                  title="Recommended Temp"
+                  value={formatRecommendedRange(analysis.recommendation.temperature, analysis.recommendation.temperature_range, '°C')}
+                  hint="Weighted by comfort votes"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Recommended Targets</h3>
+                  <p className="text-sm text-gray-700">
+                    Temperature: {formatRecommendedRange(analysis.recommendation.temperature, analysis.recommendation.temperature_range, '°C')}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    Humidity: {formatRecommendedRange(analysis.recommendation.humidity, analysis.recommendation.humidity_range, '%')}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    CO2 / Noise / Light defaults:
+                    {' '}
+                    {analysis.recommendation.reference_defaults
+                      ? `${analysis.recommendation.reference_defaults.co2} ppm, ${analysis.recommendation.reference_defaults.noise} dB, ${analysis.recommendation.reference_defaults.light} lux`
+                      : '--'}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Best Comfort Snapshots</h3>
+                  <div className="space-y-2">
+                    {analysis.buildingRecommendations.slice(0, 5).map((item) => (
+                      <div key={item.building_id} className="rounded-lg bg-white border border-gray-200 px-3 py-2">
+                        <div className="font-semibold text-gray-900">{item.building_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {item.best_vote_date} · Comfort {item.comfort_percent}%
+                        </div>
+                        <div className="mt-1 text-sm text-gray-700">
+                          Temp {item.temperature ?? '--'}°C · Humidity {item.humidity ?? '--'}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">Loading comfort analysis...</p>
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+function AnalysisCard({ title, value, hint }: { title: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+      <div className="text-xs uppercase tracking-wide text-gray-500">{title}</div>
+      <div className="mt-2 text-2xl font-bold text-gray-900">{value}</div>
+      <div className="mt-1 text-xs text-gray-500">{hint}</div>
+    </div>
+  );
+}
+
+function formatNullableNumber(value: number | null) {
+  return value === null ? '--' : value.toFixed(2);
+}
+
+function formatRecommendedRange(
+  center: number | null,
+  range: { min: number; max: number } | null,
+  unit: string
+) {
+  if (center === null || !range) {
+    return '--';
+  }
+  return `${center}${unit} (${range.min}-${range.max}${unit})`;
 }
 
 function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {

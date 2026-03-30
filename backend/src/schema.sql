@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS sensor_data (
     FOREIGN KEY (building_id) REFERENCES buildings(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_sensor_data_building_read_time
+ON sensor_data (building_id, read_time);
+
 -- 建筑默认配置
 CREATE TABLE IF NOT EXISTS building_settings (
     building_id INTEGER PRIMARY KEY,
