@@ -35,6 +35,60 @@ export interface SensorReading {
   temperature: number;
   humidity: number;
   read_time: string;
+  sensor_status?: SensorStatus;
+}
+
+export interface SensorStatus {
+  interface_id: string;
+  label: string;
+  sensor_type: string;
+  gpio_pin: number | null;
+  source_building_id: number;
+  source_building_name: string;
+  driver_available: boolean;
+  configured: boolean;
+  mode: 'hardware' | 'fallback';
+  last_read_success: boolean;
+  checked_at: string;
+  message: string;
+  temperature?: number;
+  humidity?: number;
+}
+
+export interface RaspberryPiHealth {
+  service: string;
+  checked_at: string;
+  sensor_count: number;
+  working_count: number;
+  fallback_count: number;
+  driver_available: boolean;
+  network: {
+    connected: boolean;
+    hostname: string;
+    local_ip: string | null;
+    checked_at: string;
+    message: string;
+  };
+  battery: {
+    available: boolean;
+    level_percent: number | null;
+    state: string;
+    checked_at: string;
+    message: string;
+  };
+}
+
+export interface RaspberryPiSensorListResponse {
+  sensors: SensorStatus[];
+}
+
+export interface RaspberryPiSensorDetail {
+  interface_id: string;
+  label: string;
+  temperature: number;
+  humidity: number;
+  read_time: string;
+  status: SensorStatus;
 }
 
 export interface StatsBuilding {
@@ -257,6 +311,18 @@ export function exportOperatorCsv() {
 
 export function getComfortAnalysis() {
   return request<ComfortAnalysisResponse>('/api/operator/comfort-analysis');
+}
+
+export function getRaspberryPiHealth() {
+  return request<RaspberryPiHealth>('/api/rpi/health');
+}
+
+export function getRaspberryPiSensors() {
+  return request<RaspberryPiSensorListResponse>('/api/rpi/sensors');
+}
+
+export function getRaspberryPiSensorDetail(sensorId: string) {
+  return request<RaspberryPiSensorDetail>(`/api/rpi/sensors/${encodeURIComponent(sensorId)}`);
 }
 
 export function createBuilding(payload: {

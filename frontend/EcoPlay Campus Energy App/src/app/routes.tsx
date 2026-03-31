@@ -75,11 +75,19 @@ function PublicLayout({ children }: { children: React.ReactNode }) {
 
 export const router = createBrowserRouter([
   {
+    path: '/',
+    element: <Navigate to="/user" replace />,
+  },
+  {
     path: '/login',
+    element: <Navigate to="/operator/login" replace />,
+  },
+  {
+    path: '/operator/login',
     element: <OperatorLoginPage />,
   },
   {
-    path: '/',
+    path: '/operator',
     element: (
       <OperatorLayout>
         <VotePage />
@@ -88,6 +96,18 @@ export const router = createBrowserRouter([
   },
   {
     path: '/stats',
+    element: <Navigate to="/operator/stats" replace />,
+  },
+  {
+    path: '/chat',
+    element: <Navigate to="/operator/chat" replace />,
+  },
+  {
+    path: '/settings',
+    element: <Navigate to="/operator/settings" replace />,
+  },
+  {
+    path: '/operator/stats',
     element: (
       <OperatorLayout>
         <StatsPage />
@@ -95,7 +115,7 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: '/chat',
+    path: '/operator/chat',
     element: (
       <OperatorLayout>
         <ChatPage />
@@ -103,7 +123,7 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: '/settings',
+    path: '/operator/settings',
     element: (
       <OperatorLayout>
         <SettingsPage />

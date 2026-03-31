@@ -28,7 +28,7 @@ export function OperatorLoginPage() {
       try {
         const authStatus = await getOperatorAuthStatus();
         if (authStatus.authenticated) {
-          navigate('/', { replace: true });
+          navigate('/operator', { replace: true });
           return;
         }
       } catch {
@@ -57,7 +57,7 @@ export function OperatorLoginPage() {
         challenge_id: challengeId,
         challenge_answer: challengeAnswer,
       });
-      navigate('/', { replace: true });
+      navigate('/operator', { replace: true });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Failed to log in');
       try {

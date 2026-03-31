@@ -5,10 +5,15 @@ import {
   type AlgorithmWeights,
   type BuildingSettings,
   type ComfortAnalysisResponse,
+  type RaspberryPiHealth,
+  type SensorStatus,
   createBuilding,
   deleteBuilding,
   exportOperatorCsv,
   getComfortAnalysis,
+  getRaspberryPiHealth,
+  getRaspberryPiSensorDetail,
+  getRaspberryPiSensors,
   getSettings,
   logoutOperator,
   updateAlgorithmWeights,
@@ -58,19 +63,25 @@ export function SettingsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<ComfortAnalysisResponse | null>(null);
+  const [piHealth, setPiHealth] = useState<RaspberryPiHealth | null>(null);
+  const [sensorStatuses, setSensorStatuses] = useState<SensorStatus[]>([]);
 
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
 
   async function loadSettings() {
     try {
       setError('');
-      const [settings, analysisResponse] = await Promise.all([
+      const [settings, analysisResponse, healthResponse, sensorResponse] = await Promise.all([
         getSettings(),
         getComfortAnalysis(),
+        getRaspberryPiHealth(),
+        getRaspberryPiSensors(),
       ]);
       setBuildings(settings.buildings);
       setWeights(settings.algorithmWeights);
       setAnalysis(analysisResponse);
+      setPiHealth(healthResponse);
+      setSensorStatuses(sensorResponse.sensors);
       if (settings.buildings.length > 0) {
         const nextSelectedId =
           selectedBuildingId && settings.buildings.some((building) => building.id === selectedBuildingId)
@@ -235,7 +246,26 @@ export function SettingsPage() {
     try {
       await logoutOperator();
     } finally {
-      navigate('/login', { replace: true });
+      navigate('/operator/login', { replace: true });
+    }
+  }
+
+  async function handleRefreshSensor(sensorId: string) {
+    try {
+      setError('');
+      const detail = await getRaspberryPiSensorDetail(sensorId);
+      setSensorStatuses((current) =>
+        current.map((sensor) =>
+          sensor.interface_id === sensorId
+            ? detail.status
+            : sensor
+        )
+      );
+      const healthResponse = await getRaspberryPiHealth();
+      setPiHealth(healthResponse);
+      setMessage(`Sensor status refreshed for ${detail.label}.`);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh sensor status');
     }
   }
 
@@ -479,6 +509,65 @@ export function SettingsPage() {
             <p className="text-sm text-gray-600">Loading comfort analysis...</p>
           )}
         </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-gray-900">Raspberry Pi Sensor Monitor</h2>
+            <p className="text-sm text-gray-600">
+              Developer-only panel for Raspberry Pi health and physical sensor interfaces.
+            </p>
+          </div>
+
+          {piHealth ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              <AnalysisCard title="Driver" value={piHealth.driver_available ? 'Ready' : 'Fallback'} hint="Python driver state" />
+              <AnalysisCard title="Sensors" value={String(piHealth.sensor_count)} hint="Physical interfaces exposed" />
+              <AnalysisCard
+                title="Network"
+                value={getNetworkCardValue(piHealth)}
+                hint={getNetworkCardHint(piHealth)}
+              />
+              <AnalysisCard
+                title="Battery"
+                value={formatBatteryValue(piHealth)}
+                hint={getBatteryCardHint(piHealth)}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600">Loading Raspberry Pi health...</p>
+          )}
+
+          <div className="space-y-3">
+            {sensorStatuses.map((sensor) => (
+              <div key={sensor.interface_id} className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">{sensor.label}</div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {sensor.sensor_type} · GPIO {sensor.gpio_pin ?? '--'} · Mode: {sensor.mode} · Source: {sensor.source_building_name}
+                    </div>
+                    <div className="mt-2 text-sm text-gray-700">{sensor.message}</div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      Last checked: {new Date(sensor.checked_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-start gap-2 lg:items-end">
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${sensor.last_read_success ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {sensor.last_read_success ? 'Working' : 'Needs Attention'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRefreshSensor(sensor.interface_id)}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-white"
+                    >
+                      Refresh Sensor
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -492,6 +581,36 @@ function AnalysisCard({ title, value, hint }: { title: string; value: string; hi
       <div className="mt-1 text-xs text-gray-500">{hint}</div>
     </div>
   );
+}
+
+function formatBatteryValue(piHealth: RaspberryPiHealth) {
+  if (!piHealth.battery?.available) {
+    return 'N/A';
+  }
+  return piHealth.battery.level_percent === null ? '--' : `${piHealth.battery.level_percent}%`;
+}
+
+function getBatteryCardHint(piHealth: RaspberryPiHealth) {
+  if (!piHealth.battery?.available) {
+    return 'Battery not available';
+  }
+  return piHealth.battery.state || 'unknown';
+}
+
+function getNetworkCardValue(piHealth: RaspberryPiHealth) {
+  if (!piHealth.network) {
+    return 'Unknown';
+  }
+  return piHealth.network.connected ? 'Online' : 'Offline';
+}
+
+function getNetworkCardHint(piHealth: RaspberryPiHealth) {
+  if (!piHealth.network) {
+    return 'Network data unavailable';
+  }
+  return piHealth.network.local_ip
+    ? `${piHealth.network.hostname} · ${piHealth.network.local_ip}`
+    : piHealth.network.hostname;
 }
 
 function formatNullableNumber(value: number | null) {

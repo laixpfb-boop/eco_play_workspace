@@ -13,10 +13,10 @@ export function BottomNav({ publicOnly = false }: { publicOnly?: boolean }) {
         { path: '/user/chat', label: 'Chat', icon: MessageCircle },
       ]
     : [
-        { path: '/', label: 'Vote', icon: ThumbsUp },
-        { path: '/stats', label: 'Stats', icon: BarChart3 },
-        { path: '/chat', label: 'Chat', icon: MessageCircle },
-        { path: '/settings', label: 'Settings', icon: Settings },
+        { path: '/operator', label: 'Vote', icon: ThumbsUp },
+        { path: '/operator/stats', label: 'Stats', icon: BarChart3 },
+        { path: '/operator/chat', label: 'Chat', icon: MessageCircle },
+        { path: '/operator/settings', label: 'Settings', icon: Settings },
       ];
 
   return (

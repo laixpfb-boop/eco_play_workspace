@@ -18,6 +18,7 @@ CORS(app)  # 解决跨域（前端调用）
 app.config['SECRET_KEY'] = os.environ.get('ECOPLAY_SECRET_KEY', 'ecoplay-dev-secret-change-me')
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
 
 # 首次运行初始化数据库
 try:
@@ -72,7 +73,9 @@ def _issue_login_challenge():
 
 
 def _is_operator_authenticated():
-    return session.get('operator_authenticated') is True
+    if session.get('operator_authenticated') is not True:
+        return False
+    return bool(session.get('operator_username'))
 
 
 def require_operator_auth(view):
@@ -172,6 +175,7 @@ def operator_login():
 
     LOGIN_ATTEMPTS.pop(client_ip, None)
     session.clear()
+    session.permanent = True
     session['operator_authenticated'] = True
     session['operator_username'] = username
     session['operator_login_at'] = now.isoformat() + 'Z'
@@ -294,7 +298,7 @@ def get_sensor_data(building_id):
         return jsonify({'error': 'Building not found'}), 404
 
     building_settings = db.get_building_settings(building_id) or {}
-    temp, humi = sensor.read_sensor_data(
+    temp, humi, sensor_status = sensor.read_sensor_snapshot(
         building_id,
         default_temperature=building_settings.get('default_temperature'),
         default_humidity=building_settings.get('default_humidity'),
@@ -305,7 +309,46 @@ def get_sensor_data(building_id):
         'building_id': building_id,
         'temperature': temp,
         'humidity': humi,
-        'read_time': datetime.utcnow().isoformat() + 'Z'
+        'read_time': datetime.utcnow().isoformat() + 'Z',
+        'sensor_status': sensor_status,
+    })
+
+
+@app.route('/api/rpi/health', methods=['GET'])
+@require_operator_auth
+def get_raspberry_pi_health():
+    return jsonify(sensor.get_raspberry_pi_status())
+
+
+@app.route('/api/rpi/sensors', methods=['GET'])
+@require_operator_auth
+def get_raspberry_pi_sensors():
+    return jsonify({
+        'sensors': sensor.get_all_sensor_statuses(),
+    })
+
+
+@app.route('/api/rpi/sensors/<sensor_id>', methods=['GET'])
+@require_operator_auth
+def get_raspberry_pi_sensor_detail(sensor_id):
+    sensor_status = sensor.get_sensor_status()
+    if sensor_id != sensor_status['interface_id']:
+        return jsonify({'error': 'Sensor interface not found'}), 404
+
+    building_settings = db.get_building_settings(sensor.REAL_SENSOR_BUILDING_ID) or {}
+    temperature, humidity, status = sensor.read_sensor_snapshot(
+        sensor.REAL_SENSOR_BUILDING_ID,
+        default_temperature=building_settings.get('default_temperature'),
+        default_humidity=building_settings.get('default_humidity'),
+    )
+    db.add_sensor_data(sensor.REAL_SENSOR_BUILDING_ID, temperature, humidity)
+    return jsonify({
+        'interface_id': sensor_status['interface_id'],
+        'label': sensor_status['label'],
+        'temperature': temperature,
+        'humidity': humidity,
+        'read_time': datetime.utcnow().isoformat() + 'Z',
+        'status': status,
     })
 
 # ========== 算法扩展接口 ==========
