@@ -35,6 +35,60 @@ export interface SensorReading {
   temperature: number;
   humidity: number;
   read_time: string;
+  sensor_status?: SensorStatus;
+}
+
+export interface SensorStatus {
+  interface_id: string;
+  label: string;
+  sensor_type: string;
+  gpio_pin: number | null;
+  source_building_id: number;
+  source_building_name: string;
+  driver_available: boolean;
+  configured: boolean;
+  mode: 'hardware' | 'fallback';
+  last_read_success: boolean;
+  checked_at: string;
+  message: string;
+  temperature?: number;
+  humidity?: number;
+}
+
+export interface RaspberryPiHealth {
+  service: string;
+  checked_at: string;
+  sensor_count: number;
+  working_count: number;
+  fallback_count: number;
+  driver_available: boolean;
+  network: {
+    connected: boolean;
+    hostname: string;
+    local_ip: string | null;
+    checked_at: string;
+    message: string;
+  };
+  battery: {
+    available: boolean;
+    level_percent: number | null;
+    state: string;
+    checked_at: string;
+    message: string;
+  };
+}
+
+export interface RaspberryPiSensorListResponse {
+  sensors: SensorStatus[];
+}
+
+export interface RaspberryPiSensorDetail {
+  interface_id: string;
+  label: string;
+  temperature: number;
+  humidity: number;
+  read_time: string;
+  status: SensorStatus;
 }
 
 export interface StatsBuilding {
@@ -52,6 +106,44 @@ export interface StatsBuilding {
 export interface StatsResponse {
   currentBuilding: StatsBuilding | Record<string, never>;
   buildingRankings: StatsBuilding[];
+}
+
+export interface OperatorAuthChallenge {
+  challenge_id: string;
+  prompt: string;
+  expires_in_seconds: number;
+}
+
+export interface OperatorAuthStatus {
+  authenticated: boolean;
+  username: string | null;
+}
+
+export interface ComfortAnalysisResponse {
+  sampleSize: number;
+  correlations: {
+    temperature_to_comfort: number | null;
+    humidity_to_comfort: number | null;
+  };
+  recommendation: {
+    temperature: number | null;
+    temperature_range: { min: number; max: number } | null;
+    humidity: number | null;
+    humidity_range: { min: number; max: number } | null;
+    reference_defaults: {
+      co2: number;
+      noise: number;
+      light: number;
+    } | null;
+  };
+  buildingRecommendations: Array<{
+    building_id: number;
+    building_name: string;
+    best_vote_date: string;
+    comfort_percent: number;
+    temperature: number | null;
+    humidity: number | null;
+  }>;
 }
 
 export interface SettingsResponse {
@@ -113,6 +205,7 @@ export interface ChatResponse {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -140,6 +233,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'include',
+    ...init,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || `Request failed with status ${response.status}`);
+  }
+
+  return response.blob();
 }
 
 export function getBuildings() {
@@ -170,6 +277,52 @@ export function getStats() {
 
 export function getSettings() {
   return request<SettingsResponse>('/api/settings');
+}
+
+export function getOperatorAuthChallenge() {
+  return request<OperatorAuthChallenge>('/api/operator/auth/challenge');
+}
+
+export function loginOperator(payload: {
+  username: string;
+  password: string;
+  challenge_id: string;
+  challenge_answer: string;
+}) {
+  return request<OperatorAuthStatus>('/api/operator/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getOperatorAuthStatus() {
+  return request<OperatorAuthStatus>('/api/operator/auth/status');
+}
+
+export function logoutOperator() {
+  return request<OperatorAuthStatus>('/api/operator/auth/logout', {
+    method: 'POST',
+  });
+}
+
+export function exportOperatorCsv() {
+  return requestBlob('/api/operator/export.csv');
+}
+
+export function getComfortAnalysis() {
+  return request<ComfortAnalysisResponse>('/api/operator/comfort-analysis');
+}
+
+export function getRaspberryPiHealth() {
+  return request<RaspberryPiHealth>('/api/rpi/health');
+}
+
+export function getRaspberryPiSensors() {
+  return request<RaspberryPiSensorListResponse>('/api/rpi/sensors');
+}
+
+export function getRaspberryPiSensorDetail(sensorId: string) {
+  return request<RaspberryPiSensorDetail>(`/api/rpi/sensors/${encodeURIComponent(sensorId)}`);
 }
 
 export function createBuilding(payload: {

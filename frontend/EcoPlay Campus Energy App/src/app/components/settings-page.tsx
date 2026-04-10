@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { emitBuildingsUpdated } from '@/app/building-events';
 import {
   type AlgorithmWeights,
   type BuildingSettings,
+  type ComfortAnalysisResponse,
+  type RaspberryPiHealth,
+  type SensorStatus,
   createBuilding,
   deleteBuilding,
+  exportOperatorCsv,
+  getComfortAnalysis,
+  getRaspberryPiHealth,
+  getRaspberryPiSensorDetail,
+  getRaspberryPiSensors,
   getSettings,
+  logoutOperator,
   updateAlgorithmWeights,
   updateBuildingSettings,
 } from '@/api/ecoApi';
@@ -39,6 +49,7 @@ function normalizeBuildingForm(building?: Partial<BuildingSettings> | null) {
 }
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const [buildings, setBuildings] = useState<BuildingSettings[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [buildingForm, setBuildingForm] = useState(emptyBuildingForm);
@@ -51,15 +62,26 @@ export function SettingsPage() {
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [analysis, setAnalysis] = useState<ComfortAnalysisResponse | null>(null);
+  const [piHealth, setPiHealth] = useState<RaspberryPiHealth | null>(null);
+  const [sensorStatuses, setSensorStatuses] = useState<SensorStatus[]>([]);
 
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
 
   async function loadSettings() {
     try {
       setError('');
-      const settings = await getSettings();
+      const [settings, analysisResponse, healthResponse, sensorResponse] = await Promise.all([
+        getSettings(),
+        getComfortAnalysis(),
+        getRaspberryPiHealth(),
+        getRaspberryPiSensors(),
+      ]);
       setBuildings(settings.buildings);
       setWeights(settings.algorithmWeights);
+      setAnalysis(analysisResponse);
+      setPiHealth(healthResponse);
+      setSensorStatuses(sensorResponse.sensors);
       if (settings.buildings.length > 0) {
         const nextSelectedId =
           selectedBuildingId && settings.buildings.some((building) => building.id === selectedBuildingId)
@@ -202,18 +224,81 @@ export function SettingsPage() {
     }
   }
 
+  async function handleExportCsv() {
+    try {
+      setError('');
+      const blob = await exportOperatorCsv();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `ecoplay-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+      setMessage('CSV export downloaded.');
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : 'Failed to export CSV');
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await logoutOperator();
+    } finally {
+      navigate('/operator/login', { replace: true });
+    }
+  }
+
+  async function handleRefreshSensor(sensorId: string) {
+    try {
+      setError('');
+      const detail = await getRaspberryPiSensorDetail(sensorId);
+      setSensorStatuses((current) =>
+        current.map((sensor) =>
+          sensor.interface_id === sensorId
+            ? detail.status
+            : sensor
+        )
+      );
+      const healthResponse = await getRaspberryPiHealth();
+      setPiHealth(healthResponse);
+      setMessage(`Sensor status refreshed for ${detail.label}.`);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh sensor status');
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
-      <div className="px-6 py-5 space-y-5">
-        <div>
+      <div className="px-4 py-4 sm:px-6 sm:py-5 space-y-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-600 mt-1">Add buildings, set default data, and tune weighted comfort parameters.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700"
+            >
+              Log Out
+            </button>
+          </div>
         </div>
 
         {message ? <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div> : null}
         {error ? <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <form onSubmit={handleCreateBuilding} className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-3">
             <h2 className="text-lg font-semibold text-gray-900">Add Building</h2>
             <input
@@ -228,16 +313,16 @@ export function SettingsPage() {
               placeholder="Description"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <NumberInput label="Too Cold" value={newBuildingForm.default_too_cold} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_too_cold: value }))} />
               <NumberInput label="Comfort" value={newBuildingForm.default_comfort} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_comfort: value }))} />
               <NumberInput label="Too Warm" value={newBuildingForm.default_too_warm} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_too_warm: value }))} />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <DecimalInput label="Temp" value={newBuildingForm.default_temperature} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_temperature: value }))} />
               <DecimalInput label="Humidity" value={newBuildingForm.default_humidity} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_humidity: value }))} />
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <DecimalInput label="CO2 (ppm)" value={newBuildingForm.default_co2} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_co2: value }))} />
               <DecimalInput label="Noise (dB)" value={newBuildingForm.default_noise} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_noise: value }))} />
               <DecimalInput label="Light (lux)" value={newBuildingForm.default_light} onChange={(value) => setNewBuildingForm((current) => ({ ...current, default_light: value }))} />
@@ -249,7 +334,7 @@ export function SettingsPage() {
 
           <form onSubmit={handleUpdateWeights} className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-3">
             <h2 className="text-lg font-semibold text-gray-900">Algorithm Weights</h2>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <DecimalInput label="Too Cold Weight" value={weights.too_cold} onChange={(value) => setWeights((current) => ({ ...current, too_cold: value }))} />
               <DecimalInput label="Comfort Weight" value={weights.comfort} onChange={(value) => setWeights((current) => ({ ...current, comfort: value }))} />
               <DecimalInput label="Too Warm Weight" value={weights.too_warm} onChange={(value) => setWeights((current) => ({ ...current, too_warm: value }))} />
@@ -261,9 +346,9 @@ export function SettingsPage() {
           </form>
         </div>
 
-        <div className="grid grid-cols-[280px_1fr] gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-5">
           <div className="rounded-2xl bg-white p-4 shadow-sm border border-gray-200 space-y-3 self-start">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Buildings</h2>
               <span className="text-xs text-gray-500">{buildings.length} total</span>
             </div>
@@ -306,14 +391,14 @@ export function SettingsPage() {
           </div>
 
           <form onSubmit={handleUpdateBuilding} className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Building Defaults</h2>
               {selectedBuilding ? <span className="text-sm text-gray-500">Editing: {selectedBuilding.name}</span> : null}
             </div>
 
             {selectedBuilding ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <input
                     value={buildingForm.name}
                     onChange={(event) => setBuildingForm((current) => ({ ...current, name: event.target.value }))}
@@ -327,16 +412,16 @@ export function SettingsPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <NumberInput label="Too Cold" value={buildingForm.default_too_cold} onChange={(value) => setBuildingForm((current) => ({ ...current, default_too_cold: value }))} />
                   <NumberInput label="Comfort" value={buildingForm.default_comfort} onChange={(value) => setBuildingForm((current) => ({ ...current, default_comfort: value }))} />
                   <NumberInput label="Too Warm" value={buildingForm.default_too_warm} onChange={(value) => setBuildingForm((current) => ({ ...current, default_too_warm: value }))} />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <DecimalInput label="Default Temp" value={buildingForm.default_temperature} onChange={(value) => setBuildingForm((current) => ({ ...current, default_temperature: value }))} />
                   <DecimalInput label="Default Humidity" value={buildingForm.default_humidity} onChange={(value) => setBuildingForm((current) => ({ ...current, default_humidity: value }))} />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <DecimalInput label="Default CO2 (ppm)" value={buildingForm.default_co2} onChange={(value) => setBuildingForm((current) => ({ ...current, default_co2: value }))} />
                   <DecimalInput label="Default Noise (dB)" value={buildingForm.default_noise} onChange={(value) => setBuildingForm((current) => ({ ...current, default_noise: value }))} />
                   <DecimalInput label="Default Light (lux)" value={buildingForm.default_light} onChange={(value) => setBuildingForm((current) => ({ ...current, default_light: value }))} />
@@ -350,9 +435,197 @@ export function SettingsPage() {
             )}
           </form>
         </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-gray-900">Comfort Analysis</h2>
+            <p className="text-sm text-gray-600">
+              Correlation analysis between comfort votes and sensor readings, with recommended operating targets.
+            </p>
+          </div>
+
+          {analysis ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                <AnalysisCard
+                  title="Samples"
+                  value={String(analysis.sampleSize)}
+                  hint="Daily vote/sensor rows joined"
+                />
+                <AnalysisCard
+                  title="Temp Correlation"
+                  value={formatNullableNumber(analysis.correlations.temperature_to_comfort)}
+                  hint="Comfort vs temperature"
+                />
+                <AnalysisCard
+                  title="Humidity Correlation"
+                  value={formatNullableNumber(analysis.correlations.humidity_to_comfort)}
+                  hint="Comfort vs humidity"
+                />
+                <AnalysisCard
+                  title="Recommended Temp"
+                  value={formatRecommendedRange(analysis.recommendation.temperature, analysis.recommendation.temperature_range, '°C')}
+                  hint="Weighted by comfort votes"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Recommended Targets</h3>
+                  <p className="text-sm text-gray-700">
+                    Temperature: {formatRecommendedRange(analysis.recommendation.temperature, analysis.recommendation.temperature_range, '°C')}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    Humidity: {formatRecommendedRange(analysis.recommendation.humidity, analysis.recommendation.humidity_range, '%')}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    CO2 / Noise / Light defaults:
+                    {' '}
+                    {analysis.recommendation.reference_defaults
+                      ? `${analysis.recommendation.reference_defaults.co2} ppm, ${analysis.recommendation.reference_defaults.noise} dB, ${analysis.recommendation.reference_defaults.light} lux`
+                      : '--'}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Best Comfort Snapshots</h3>
+                  <div className="space-y-2">
+                    {analysis.buildingRecommendations.slice(0, 5).map((item) => (
+                      <div key={item.building_id} className="rounded-lg bg-white border border-gray-200 px-3 py-2">
+                        <div className="font-semibold text-gray-900">{item.building_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {item.best_vote_date} · Comfort {item.comfort_percent}%
+                        </div>
+                        <div className="mt-1 text-sm text-gray-700">
+                          Temp {item.temperature ?? '--'}°C · Humidity {item.humidity ?? '--'}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">Loading comfort analysis...</p>
+          )}
+        </div>
+
+        <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-200 space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-gray-900">Raspberry Pi Sensor Monitor</h2>
+            <p className="text-sm text-gray-600">
+              Developer-only panel for Raspberry Pi health and physical sensor interfaces.
+            </p>
+          </div>
+
+          {piHealth ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              <AnalysisCard title="Driver" value={piHealth.driver_available ? 'Ready' : 'Fallback'} hint="Python driver state" />
+              <AnalysisCard title="Sensors" value={String(piHealth.sensor_count)} hint="Physical interfaces exposed" />
+              <AnalysisCard
+                title="Network"
+                value={getNetworkCardValue(piHealth)}
+                hint={getNetworkCardHint(piHealth)}
+              />
+              <AnalysisCard
+                title="Battery"
+                value={formatBatteryValue(piHealth)}
+                hint={getBatteryCardHint(piHealth)}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600">Loading Raspberry Pi health...</p>
+          )}
+
+          <div className="space-y-3">
+            {sensorStatuses.map((sensor) => (
+              <div key={sensor.interface_id} className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">{sensor.label}</div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {sensor.sensor_type} · GPIO {sensor.gpio_pin ?? '--'} · Mode: {sensor.mode} · Source: {sensor.source_building_name}
+                    </div>
+                    <div className="mt-2 text-sm text-gray-700">{sensor.message}</div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      Last checked: {new Date(sensor.checked_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-start gap-2 lg:items-end">
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${sensor.last_read_success ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {sensor.last_read_success ? 'Working' : 'Needs Attention'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRefreshSensor(sensor.interface_id)}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-white"
+                    >
+                      Refresh Sensor
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
+}
+
+function AnalysisCard({ title, value, hint }: { title: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+      <div className="text-xs uppercase tracking-wide text-gray-500">{title}</div>
+      <div className="mt-2 text-2xl font-bold text-gray-900">{value}</div>
+      <div className="mt-1 text-xs text-gray-500">{hint}</div>
+    </div>
+  );
+}
+
+function formatBatteryValue(piHealth: RaspberryPiHealth) {
+  if (!piHealth.battery?.available) {
+    return 'N/A';
+  }
+  return piHealth.battery.level_percent === null ? '--' : `${piHealth.battery.level_percent}%`;
+}
+
+function getBatteryCardHint(piHealth: RaspberryPiHealth) {
+  if (!piHealth.battery?.available) {
+    return 'Battery not available';
+  }
+  return piHealth.battery.state || 'unknown';
+}
+
+function getNetworkCardValue(piHealth: RaspberryPiHealth) {
+  if (!piHealth.network) {
+    return 'Unknown';
+  }
+  return piHealth.network.connected ? 'Online' : 'Offline';
+}
+
+function getNetworkCardHint(piHealth: RaspberryPiHealth) {
+  if (!piHealth.network) {
+    return 'Network data unavailable';
+  }
+  return piHealth.network.local_ip
+    ? `${piHealth.network.hostname} · ${piHealth.network.local_ip}`
+    : piHealth.network.hostname;
+}
+
+function formatNullableNumber(value: number | null) {
+  return value === null ? '--' : value.toFixed(2);
+}
+
+function formatRecommendedRange(
+  center: number | null,
+  range: { min: number; max: number } | null,
+  unit: string
+) {
+  if (center === null || !range) {
+    return '--';
+  }
+  return `${center}${unit} (${range.min}-${range.max}${unit})`;
 }
 
 function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {

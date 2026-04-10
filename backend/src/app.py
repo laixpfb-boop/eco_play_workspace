@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, session
 from flask_cors import CORS
 import sqlite3
 from . import db
@@ -6,16 +6,90 @@ from . import sensor
 from . import algorithms
 from . import chat_service
 from datetime import date, datetime
+import csv
+import io
+import os
+import secrets
+import db
+import sensor
+import algorithms
+import chat_service
+from datetime import date, datetime, timedelta
+from functools import wraps
 
 # 初始化Flask应用
 app = Flask(__name__)
 CORS(app)  # 解决跨域（前端调用）
+app.config['SECRET_KEY'] = os.environ.get('ECOPLAY_SECRET_KEY', 'ecoplay-dev-secret-change-me')
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
 
 # 首次运行初始化数据库
 try:
     db.init_db()
 except Exception as e:
     raise RuntimeError(f"数据库初始化失败: {e}") from e
+
+
+OPERATOR_USERNAME = os.environ.get('ECOPLAY_OPERATOR_USERNAME', 'admin')
+OPERATOR_PASSWORD = os.environ.get('ECOPLAY_OPERATOR_PASSWORD', 'admin123')
+LOGIN_WINDOW = timedelta(minutes=10)
+LOGIN_MAX_ATTEMPTS = 5
+CHALLENGE_TTL = timedelta(minutes=5)
+LOGIN_ATTEMPTS = {}
+LOGIN_CHALLENGES = {}
+
+
+def _cleanup_login_attempts(now):
+    expired = [ip for ip, state in LOGIN_ATTEMPTS.items() if state['expires_at'] <= now]
+    for ip in expired:
+        LOGIN_ATTEMPTS.pop(ip, None)
+
+
+def _cleanup_challenges(now):
+    expired = [challenge_id for challenge_id, state in LOGIN_CHALLENGES.items() if state['expires_at'] <= now]
+    for challenge_id in expired:
+        LOGIN_CHALLENGES.pop(challenge_id, None)
+
+
+def _get_client_ip():
+    forwarded_for = request.headers.get('X-Forwarded-For', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+def _issue_login_challenge():
+    now = datetime.utcnow()
+    _cleanup_challenges(now)
+    left = secrets.randbelow(8) + 2
+    right = secrets.randbelow(8) + 2
+    challenge_id = secrets.token_urlsafe(12)
+    LOGIN_CHALLENGES[challenge_id] = {
+        'answer': str(left + right),
+        'expires_at': now + CHALLENGE_TTL,
+    }
+    return {
+        'challenge_id': challenge_id,
+        'prompt': f'What is {left} + {right}?',
+        'expires_in_seconds': int(CHALLENGE_TTL.total_seconds()),
+    }
+
+
+def _is_operator_authenticated():
+    if session.get('operator_authenticated') is not True:
+        return False
+    return bool(session.get('operator_username'))
+
+
+def require_operator_auth(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _is_operator_authenticated():
+            return jsonify({'error': 'Operator authentication required'}), 401
+        return view(*args, **kwargs)
+    return wrapped
 
 
 def calculate_percent(part, total):
@@ -37,6 +111,94 @@ def parse_non_negative_float(data, field_name):
     if not isinstance(value, (int, float)) or value < 0:
         raise ValueError(f'{field_name} must be a non-negative number')
     return float(value)
+
+
+def build_comfort_analysis_response():
+    analysis_rows = db.get_comfort_analysis_rows()
+    model_result = algorithms.analyze_comfort_correlation(analysis_rows)
+    settings = db.get_settings_overview()
+    reference_defaults = None
+    if settings:
+        reference_defaults = {
+            'co2': round(sum(item['default_co2'] for item in settings) / len(settings), 1),
+            'noise': round(sum(item['default_noise'] for item in settings) / len(settings), 1),
+            'light': round(sum(item['default_light'] for item in settings) / len(settings), 1),
+        }
+    return {
+        'sampleSize': model_result['sampleSize'],
+        'correlations': model_result['correlations'],
+        'recommendation': {
+            **model_result['recommendation'],
+            'reference_defaults': reference_defaults,
+        },
+        'buildingRecommendations': model_result['buildingRecommendations'],
+    }
+
+
+@app.route('/api/operator/auth/challenge', methods=['GET'])
+def get_operator_login_challenge():
+    return jsonify(_issue_login_challenge())
+
+
+@app.route('/api/operator/auth/login', methods=['POST'])
+def operator_login():
+    now = datetime.utcnow()
+    _cleanup_login_attempts(now)
+    _cleanup_challenges(now)
+
+    client_ip = _get_client_ip()
+    login_state = LOGIN_ATTEMPTS.get(client_ip)
+    if login_state and login_state['count'] >= LOGIN_MAX_ATTEMPTS and login_state['expires_at'] > now:
+      retry_after = int((login_state['expires_at'] - now).total_seconds())
+      return jsonify({'error': f'Too many login attempts. Try again in {retry_after} seconds.'}), 429
+
+    data = request.get_json(silent=True) or {}
+    username = data.get('username', '')
+    password = data.get('password', '')
+    challenge_id = data.get('challenge_id', '')
+    challenge_answer = str(data.get('challenge_answer', '')).strip()
+
+    challenge = LOGIN_CHALLENGES.get(challenge_id)
+    if not challenge or challenge['expires_at'] <= now:
+        return jsonify({'error': 'The anti-attack code has expired. Please refresh and try again.'}), 400
+
+    if challenge_answer != challenge['answer']:
+        LOGIN_CHALLENGES.pop(challenge_id, None)
+        LOGIN_ATTEMPTS[client_ip] = {
+            'count': (login_state['count'] if login_state else 0) + 1,
+            'expires_at': now + LOGIN_WINDOW,
+        }
+        return jsonify({'error': 'Incorrect anti-attack code'}), 400
+
+    LOGIN_CHALLENGES.pop(challenge_id, None)
+    if username != OPERATOR_USERNAME or password != OPERATOR_PASSWORD:
+        LOGIN_ATTEMPTS[client_ip] = {
+            'count': (login_state['count'] if login_state else 0) + 1,
+            'expires_at': now + LOGIN_WINDOW,
+        }
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+    LOGIN_ATTEMPTS.pop(client_ip, None)
+    session.clear()
+    session.permanent = True
+    session['operator_authenticated'] = True
+    session['operator_username'] = username
+    session['operator_login_at'] = now.isoformat() + 'Z'
+    return jsonify({'authenticated': True, 'username': username})
+
+
+@app.route('/api/operator/auth/status', methods=['GET'])
+def operator_auth_status():
+    return jsonify({
+        'authenticated': _is_operator_authenticated(),
+        'username': session.get('operator_username'),
+    })
+
+
+@app.route('/api/operator/auth/logout', methods=['POST'])
+def operator_logout():
+    session.clear()
+    return jsonify({'authenticated': False})
 
 # ========== 建筑接口 ==========
 @app.route('/api/buildings', methods=['GET'])
@@ -141,7 +303,7 @@ def get_sensor_data(building_id):
         return jsonify({'error': 'Building not found'}), 404
 
     building_settings = db.get_building_settings(building_id) or {}
-    temp, humi = sensor.read_sensor_data(
+    temp, humi, sensor_status = sensor.read_sensor_snapshot(
         building_id,
         default_temperature=building_settings.get('default_temperature'),
         default_humidity=building_settings.get('default_humidity'),
@@ -152,7 +314,46 @@ def get_sensor_data(building_id):
         'building_id': building_id,
         'temperature': temp,
         'humidity': humi,
-        'read_time': datetime.utcnow().isoformat() + 'Z'
+        'read_time': datetime.utcnow().isoformat() + 'Z',
+        'sensor_status': sensor_status,
+    })
+
+
+@app.route('/api/rpi/health', methods=['GET'])
+@require_operator_auth
+def get_raspberry_pi_health():
+    return jsonify(sensor.get_raspberry_pi_status())
+
+
+@app.route('/api/rpi/sensors', methods=['GET'])
+@require_operator_auth
+def get_raspberry_pi_sensors():
+    return jsonify({
+        'sensors': sensor.get_all_sensor_statuses(),
+    })
+
+
+@app.route('/api/rpi/sensors/<sensor_id>', methods=['GET'])
+@require_operator_auth
+def get_raspberry_pi_sensor_detail(sensor_id):
+    sensor_status = sensor.get_sensor_status()
+    if sensor_id != sensor_status['interface_id']:
+        return jsonify({'error': 'Sensor interface not found'}), 404
+
+    building_settings = db.get_building_settings(sensor.REAL_SENSOR_BUILDING_ID) or {}
+    temperature, humidity, status = sensor.read_sensor_snapshot(
+        sensor.REAL_SENSOR_BUILDING_ID,
+        default_temperature=building_settings.get('default_temperature'),
+        default_humidity=building_settings.get('default_humidity'),
+    )
+    db.add_sensor_data(sensor.REAL_SENSOR_BUILDING_ID, temperature, humidity)
+    return jsonify({
+        'interface_id': sensor_status['interface_id'],
+        'label': sensor_status['label'],
+        'temperature': temperature,
+        'humidity': humidity,
+        'read_time': datetime.utcnow().isoformat() + 'Z',
+        'status': status,
     })
 
 # ========== 算法扩展接口 ==========
@@ -211,6 +412,7 @@ def get_stats_data():
 
 
 @app.route('/api/settings', methods=['GET'])
+@require_operator_auth
 def get_settings():
     return jsonify({
         'buildings': db.get_settings_overview(),
@@ -219,6 +421,7 @@ def get_settings():
 
 
 @app.route('/api/settings/buildings', methods=['POST'])
+@require_operator_auth
 def create_building_with_settings():
     data = request.get_json(silent=True)
     if not data or not data.get('name'):
@@ -259,6 +462,7 @@ def create_building_with_settings():
 
 
 @app.route('/api/settings/buildings/<int:building_id>', methods=['PUT'])
+@require_operator_auth
 def update_building_settings(building_id):
     data = request.get_json(silent=True)
     if not data:
@@ -307,6 +511,7 @@ def update_building_settings(building_id):
 
 
 @app.route('/api/settings/buildings/<int:building_id>', methods=['DELETE'])
+@require_operator_auth
 def delete_building_from_settings(building_id):
     if not db.get_building_by_id(building_id):
         return jsonify({'error': 'Building not found'}), 404
@@ -317,6 +522,7 @@ def delete_building_from_settings(building_id):
 
 
 @app.route('/api/settings/weights', methods=['PUT'])
+@require_operator_auth
 def update_algorithm_settings():
     data = request.get_json(silent=True)
     required_fields = ['too_cold', 'comfort', 'too_warm', 'temp_factor']
@@ -335,6 +541,54 @@ def update_algorithm_settings():
 
     db.update_algorithm_weights(weights)
     return jsonify({'message': 'Algorithm weights updated successfully', 'algorithmWeights': db.get_algorithm_weights()})
+
+
+@app.route('/api/operator/export.csv', methods=['GET'])
+@require_operator_auth
+def export_operator_csv():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'building_id',
+        'building_name',
+        'building_description',
+        'vote_date',
+        'too_cold',
+        'comfort',
+        'too_warm',
+        'total',
+        'avg_temperature',
+        'avg_humidity',
+        'sensor_samples',
+    ])
+    for row in db.get_vote_sensor_export_rows():
+        writer.writerow([
+            row['building_id'],
+            row['building_name'],
+            row['building_description'],
+            row['vote_date'],
+            row['too_cold'],
+            row['comfort'],
+            row['too_warm'],
+            row['total'],
+            row['avg_temperature'],
+            row['avg_humidity'],
+            row['sensor_samples'],
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={
+            'Content-Disposition': f'attachment; filename=ecoplay-export-{date.today().isoformat()}.csv'
+        },
+    )
+
+
+@app.route('/api/operator/comfort-analysis', methods=['GET'])
+@require_operator_auth
+def get_operator_comfort_analysis():
+    return jsonify(build_comfort_analysis_response())
 
 
 @app.route('/api/chat/session', methods=['POST'])

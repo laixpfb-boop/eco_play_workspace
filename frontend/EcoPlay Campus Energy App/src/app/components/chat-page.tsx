@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router';
 import { Send, Bot, Trash2, PlusSquare } from 'lucide-react';
 import { BUILDINGS_UPDATED_EVENT } from '@/app/building-events';
+import { getSavedBuildingId, saveBuildingId } from '@/app/selection-context';
+import { getBuildingFromParam } from '@/app/url-context';
 import {
   type Building,
   type ChatMessageRecord,
@@ -16,6 +19,8 @@ import {
 const SESSION_STORAGE_KEY = 'ecoplay_chat_session_id';
 
 export function ChatPage() {
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | null>(null);
   const [roomLabel, setRoomLabel] = useState('');
@@ -26,6 +31,29 @@ export function ChatPage() {
   const [statusMessage, setStatusMessage] = useState('Smart chat can help explain comfort data and create service requests from room issues.');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState('');
+  const buildingParam = searchParams.get('building');
+  const roomParam = searchParams.get('room');
+  const isPublicView = location.pathname.startsWith('/user');
+  const hasPresetBuilding = Boolean(buildingParam);
+  const hasPresetRoom = Boolean(roomParam);
+  const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId) ?? null;
+
+  function updateSearchParams(nextBuilding: Building | null, nextRoom: string) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextBuilding) {
+      nextParams.set('building', nextBuilding.name);
+    } else {
+      nextParams.delete('building');
+    }
+
+    if (nextRoom.trim()) {
+      nextParams.set('room', nextRoom.trim());
+    } else {
+      nextParams.delete('room');
+    }
+
+    setSearchParams(nextParams, { replace: true });
+  }
 
   function resetChatSession(nextBuildingId: number | null) {
     setSessionId('');
@@ -37,6 +65,9 @@ export function ChatPage() {
       setSelectedBuildingId(nextBuildingId);
     }
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    if (!hasPresetRoom) {
+      setRoomLabel('');
+    }
   }
 
   async function refreshBuildings(preferredBuildingId?: number | null) {
@@ -48,12 +79,18 @@ export function ChatPage() {
       return;
     }
 
+    const buildingFromUrl = getBuildingFromParam(buildingList, buildingParam);
+    const savedBuildingId = getSavedBuildingId(isPublicView);
+
     const nextSelectedId =
-      preferredBuildingId && buildingList.some((building) => building.id === preferredBuildingId)
+      buildingFromUrl?.id ??
+      (savedBuildingId && buildingList.some((building) => building.id === savedBuildingId)
+        ? savedBuildingId
+        : preferredBuildingId && buildingList.some((building) => building.id === preferredBuildingId)
         ? preferredBuildingId
         : selectedBuildingId && buildingList.some((building) => building.id === selectedBuildingId)
         ? selectedBuildingId
-        : buildingList[0].id;
+        : buildingList[0].id);
 
     if (!buildingList.some((building) => building.id === selectedBuildingId)) {
       resetChatSession(nextSelectedId);
@@ -74,8 +111,18 @@ export function ChatPage() {
         }
 
         setBuildings(buildingList);
+        const buildingFromUrl = getBuildingFromParam(buildingList, buildingParam);
+        const savedBuildingId = getSavedBuildingId(isPublicView);
         if (buildingList.length > 0) {
-          setSelectedBuildingId(buildingList[0].id);
+          setSelectedBuildingId(
+            buildingFromUrl?.id ??
+              (savedBuildingId && buildingList.some((building) => building.id === savedBuildingId)
+                ? savedBuildingId
+                : buildingList[0].id)
+          );
+        }
+        if (roomParam) {
+          setRoomLabel(roomParam);
         }
 
         const savedSessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
@@ -88,8 +135,10 @@ export function ChatPage() {
             setSessionId(savedSessionId);
             setMessages(history.messages);
             setOpenRequests(history.openRequests);
-            setRoomLabel(history.session.room_label ?? '');
-            if (history.session.building_id) {
+            setRoomLabel(roomParam ?? history.session.room_label ?? '');
+            if (buildingFromUrl?.id) {
+              setSelectedBuildingId(buildingFromUrl.id);
+            } else if (history.session.building_id) {
               setSelectedBuildingId(history.session.building_id);
             }
           } catch {
@@ -107,7 +156,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [buildingParam, roomParam, isPublicView]);
 
   useEffect(() => {
     async function handleBuildingsUpdated() {
@@ -122,7 +171,23 @@ export function ChatPage() {
     return () => {
       window.removeEventListener(BUILDINGS_UPDATED_EVENT, handleBuildingsUpdated);
     };
-  }, [selectedBuildingId, buildings, sessionId, messages]);
+  }, [selectedBuildingId, buildings, sessionId, messages, buildingParam, isPublicView]);
+
+  useEffect(() => {
+    saveBuildingId(isPublicView, selectedBuildingId);
+  }, [isPublicView, selectedBuildingId]);
+
+  useEffect(() => {
+    if (!selectedBuilding) {
+      return;
+    }
+
+    if (buildingParam === selectedBuilding.name && roomParam === (roomLabel.trim() || null)) {
+      return;
+    }
+
+    updateSearchParams(selectedBuilding, roomLabel);
+  }, [selectedBuilding, roomLabel, buildingParam, roomParam]);
 
   async function ensureSessionId() {
     if (sessionId) {
@@ -201,8 +266,10 @@ export function ChatPage() {
   }
 
   function handleBuildingChange(nextBuildingId: number) {
+    const nextBuilding = buildings.find((building) => building.id === nextBuildingId) ?? null;
     if (!sessionId && messages.length === 0) {
       setSelectedBuildingId(nextBuildingId);
+      updateSearchParams(nextBuilding, roomLabel);
       return;
     }
 
@@ -215,6 +282,7 @@ export function ChatPage() {
     }
 
     resetChatSession(nextBuildingId);
+    updateSearchParams(nextBuilding, roomLabel);
   }
 
   async function handleDeleteMessage(messageId: number) {
@@ -248,50 +316,89 @@ export function ChatPage() {
       return;
     }
     resetChatSession(selectedBuildingId);
-    setRoomLabel('');
+    if (!hasPresetRoom) {
+      setRoomLabel('');
+    }
   }
 
   return (
     <div className="flex flex-col h-full bg-white">
-      <div className="bg-green-600 text-white py-4 px-5 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">AI Energy Assistant</h1>
+      <div className={`border-b ${isPublicView ? 'bg-gradient-to-b from-green-600 to-green-500 text-white px-4 py-4' : 'bg-green-600 text-white px-4 py-4 sm:px-5 sm:py-5'}`}>
+        <div className={`flex ${isPublicView ? 'flex-col items-stretch gap-2 text-center' : 'flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4'}`}>
+          <div>
+            <h1 className={`${isPublicView ? 'text-2xl' : 'text-xl sm:text-2xl'} font-bold`}>AI Energy Assistant</h1>
+          </div>
           <button
             type="button"
             onClick={handleNewChat}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20"
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 ${isPublicView ? 'w-full' : 'w-full lg:w-auto'}`}
           >
             <PlusSquare className="h-4 w-4" />
             New Chat
           </button>
         </div>
-        <div className="mt-3 grid grid-cols-[1fr_180px_180px] gap-3 items-center">
-          <p className="text-sm text-green-50">{statusMessage}</p>
-          <select
-            value={selectedBuildingId ?? ''}
-            onChange={(event) => handleBuildingChange(Number(event.target.value))}
-            className="rounded-lg px-3 py-2 text-sm text-gray-900"
-          >
-            {buildings.map((building) => (
-              <option key={building.id} value={building.id}>
-                {building.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={roomLabel}
-            onChange={(event) => setRoomLabel(event.target.value)}
-            placeholder="Room / Area"
-            className="rounded-lg px-3 py-2 text-sm text-gray-900"
-          />
+        <div className={`mt-3 ${isPublicView ? 'space-y-2' : 'grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px] xl:grid-cols-[minmax(0,1fr)_220px_220px] items-center'}`}>
+          {!isPublicView ? <p className="text-sm text-green-50">{statusMessage}</p> : null}
+          {isPublicView ? (
+            <div className="grid grid-cols-1 gap-2 text-left">
+              <label className="block">
+                <span className="sr-only">Building</span>
+                <select
+                  value={selectedBuildingId ?? ''}
+                  onChange={(event) => handleBuildingChange(Number(event.target.value))}
+                  className="w-full rounded-2xl px-4 py-3 text-sm text-gray-900"
+                >
+                  {buildings.map((building) => (
+                    <option key={building.id} value={building.id}>
+                      {building.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <input
+                value={roomLabel}
+                onChange={(event) => {
+                  const nextRoom = event.target.value;
+                  setRoomLabel(nextRoom);
+                  updateSearchParams(selectedBuilding, nextRoom);
+                }}
+                placeholder="Room / Area"
+                className="w-full rounded-2xl px-4 py-3 text-sm text-gray-900"
+              />
+            </div>
+          ) : (
+            <>
+              <select
+                value={selectedBuildingId ?? ''}
+                onChange={(event) => handleBuildingChange(Number(event.target.value))}
+                className="w-full rounded-lg px-3 py-2 text-sm text-gray-900"
+              >
+                {buildings.map((building) => (
+                  <option key={building.id} value={building.id}>
+                    {building.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={roomLabel}
+                onChange={(event) => {
+                  const nextRoom = event.target.value;
+                  setRoomLabel(nextRoom);
+                  updateSearchParams(selectedBuilding, nextRoom);
+                }}
+                placeholder="Room / Area"
+                className="w-full rounded-lg px-3 py-2 text-sm text-gray-900"
+              />
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50">
+      <div className={`flex-1 overflow-y-auto space-y-4 ${isPublicView ? 'bg-slate-50 px-4 py-3' : 'bg-gray-50 px-4 py-4'}`}>
         {error ? <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
 
         {openRequests.length > 0 ? (
-          <div className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <div className={`rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 ${isPublicView ? 'shadow-sm' : ''}`}>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-amber-900">Open Service Requests</h2>
               <span className="text-xs text-amber-700">{openRequests.length} active</span>
@@ -299,7 +406,7 @@ export function ChatPage() {
             <div className="mt-3 space-y-2">
               {openRequests.map((request) => (
                 <div key={request.id} className="rounded-xl bg-white border border-amber-100 px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className={`flex items-start gap-3 ${isPublicView ? 'flex-col' : 'flex-col xl:flex-row xl:justify-between'}`}>
                     <div>
                       <div className="text-sm font-semibold text-gray-900">
                         #{request.id} · {request.request_type.replaceAll('_', ' ')}
@@ -312,7 +419,7 @@ export function ChatPage() {
                     <button
                       type="button"
                       onClick={() => handleCloseRequest(request.id)}
-                      className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      className={`rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${isPublicView ? 'w-full' : ''}`}
                     >
                       Close
                     </button>
@@ -324,22 +431,22 @@ export function ChatPage() {
         ) : null}
 
         {messages.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-4 text-sm text-gray-600">
-            Ask about room comfort, building conditions, or describe a problem like “Room 301 is too cold every afternoon.”
+          <div className={`rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-4 text-sm text-gray-600 ${isPublicView ? 'shadow-sm' : ''}`}>
+            Start a new conversation.
           </div>
         ) : null}
 
         {messages.map((message) => (
           <div key={`${message.role}-${message.id}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`flex gap-2 max-w-[82%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className={`flex gap-2 ${isPublicView ? 'max-w-[92%]' : 'max-w-[82%]'} ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'assistant' ? 'bg-green-600' : 'bg-blue-600'}`}>
                 {message.role === 'assistant' ? <Bot className="w-5 h-5 text-white" /> : <span className="text-white font-bold">U</span>}
               </div>
               <div
                 className={`rounded-2xl px-4 py-3 ${
                   message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-800 border border-green-200'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white text-gray-800 border border-green-200 shadow-sm'
                 }`}
               >
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
@@ -361,8 +468,8 @@ export function ChatPage() {
         ))}
       </div>
 
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <div className="flex gap-2">
+      <div className={`border-t border-gray-200 bg-white ${isPublicView ? 'p-3' : 'p-4'}`}>
+        <div className="flex gap-2 items-end">
           <input
             type="text"
             value={input}
@@ -373,12 +480,12 @@ export function ChatPage() {
               }
             }}
             placeholder="Describe the room issue or ask for help..."
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500"
+            className={`flex-1 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 ${isPublicView ? 'px-4 py-3.5 text-base' : 'px-4 py-3'}`}
           />
           <button
             onClick={handleSend}
             disabled={isSending}
-            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-full p-3 transition-colors"
+            className={`bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white rounded-full transition-colors ${isPublicView ? 'p-3.5' : 'p-3'}`}
           >
             <Send className="w-5 h-5" />
           </button>
