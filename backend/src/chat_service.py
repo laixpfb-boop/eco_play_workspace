@@ -4,7 +4,7 @@ import urllib.error
 import urllib.request
 from dotenv import load_dotenv
 
-import db
+from . import db
 
 load_dotenv()
 

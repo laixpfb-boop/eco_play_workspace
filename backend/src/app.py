@@ -1,10 +1,10 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
-import db
-import sensor
-import algorithms
-import chat_service
+from . import db
+from . import sensor
+from . import algorithms
+from . import chat_service
 from datetime import date, datetime
 
 # 初始化Flask应用
