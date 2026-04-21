@@ -303,12 +303,14 @@ def get_sensor_data(building_id):
         default_temperature=building_settings.get('default_temperature'),
         default_humidity=building_settings.get('default_humidity'),
     )
+    co2 = round(float(sensor_status.get('co2', building_settings.get('default_co2', 650.0))), 1)
     # 存储传感器数据到数据库
     db.add_sensor_data(building_id, temp, humi)
     return jsonify({
         'building_id': building_id,
         'temperature': temp,
         'humidity': humi,
+        'co2': co2,
         'read_time': datetime.utcnow().isoformat() + 'Z',
         'sensor_status': sensor_status,
     })
@@ -341,12 +343,14 @@ def get_raspberry_pi_sensor_detail(sensor_id):
         default_temperature=building_settings.get('default_temperature'),
         default_humidity=building_settings.get('default_humidity'),
     )
+    co2 = round(float(status.get('co2', building_settings.get('default_co2', 650.0))), 1)
     db.add_sensor_data(sensor.REAL_SENSOR_BUILDING_ID, temperature, humidity)
     return jsonify({
         'interface_id': sensor_status['interface_id'],
         'label': sensor_status['label'],
         'temperature': temperature,
         'humidity': humidity,
+        'co2': co2,
         'read_time': datetime.utcnow().isoformat() + 'Z',
         'status': status,
     })

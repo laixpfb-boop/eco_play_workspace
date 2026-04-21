@@ -34,6 +34,7 @@ export interface SensorReading {
   building_id: number;
   temperature: number;
   humidity: number;
+  co2: number;
   read_time: string;
   sensor_status?: SensorStatus;
 }
@@ -53,6 +54,7 @@ export interface SensorStatus {
   message: string;
   temperature?: number;
   humidity?: number;
+  co2?: number;
 }
 
 export interface RaspberryPiHealth {
@@ -87,6 +89,7 @@ export interface RaspberryPiSensorDetail {
   label: string;
   temperature: number;
   humidity: number;
+  co2: number;
   read_time: string;
   status: SensorStatus;
 }
