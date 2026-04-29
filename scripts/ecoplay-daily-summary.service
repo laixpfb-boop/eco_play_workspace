@@ -1,0 +1,9 @@
+[Unit]
+Description=Send EcoPlay daily summary to Lark
+After=network-online.target ecoplay-startup.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ecoplay/eco_play_workspace
+ExecStart=/bin/bash -lc 'source venv/bin/activate && python3 backend/src/daily_summary.py'

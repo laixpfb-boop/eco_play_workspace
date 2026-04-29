@@ -149,9 +149,20 @@ start_lark_tunnel() {
 show_status() {
   echo "--- Status ---"
   ss -ltnp 2>/dev/null | grep -E ":(5001|5173|8080|18789|20241) " || true
-  echo "Frontend: http://192.168.43.21:$FRONTEND_PORT/"
-  echo "Backend:  http://192.168.43.21:$BACKEND_PORT/"
-  echo "LLM:      http://192.168.43.21:$LLM_PORT/"
+  local lan_ip
+  lan_ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.' | grep -vE '^172\.1[78]\.' | head -1 || true)"
+  local tailscale_ip
+  tailscale_ip="$(command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null | head -1 || true)"
+  if [ -n "$lan_ip" ]; then
+    echo "Frontend LAN: http://$lan_ip:$FRONTEND_PORT/"
+    echo "Backend LAN:  http://$lan_ip:$BACKEND_PORT/"
+    echo "LLM LAN:      http://$lan_ip:$LLM_PORT/"
+  fi
+  if [ -n "$tailscale_ip" ]; then
+    echo "Frontend Tailscale: http://$tailscale_ip:$FRONTEND_PORT/"
+    echo "Backend Tailscale:  http://$tailscale_ip:$BACKEND_PORT/"
+    echo "LLM Tailscale:      http://$tailscale_ip:$LLM_PORT/"
+  fi
   echo "Logs:     $LOG_DIR"
 }
 

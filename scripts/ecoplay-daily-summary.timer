@@ -1,0 +1,10 @@
+[Unit]
+Description=Run EcoPlay daily Lark summary every day
+
+[Timer]
+OnCalendar=*-*-* 18:00:00
+Persistent=true
+Unit=ecoplay-daily-summary.service
+
+[Install]
+WantedBy=timers.target
