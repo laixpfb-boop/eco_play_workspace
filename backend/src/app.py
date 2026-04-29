@@ -1,15 +1,17 @@
 from flask import Flask, jsonify, request, Response, session
 from flask_cors import CORS
 import sqlite3
-from . import db
-from . import sensor
-from . import algorithms
-from . import chat_service
-from datetime import date, datetime, timedelta
 import csv
 import io
 import os
 import secrets
+import db
+import sensor
+import algorithms
+import chat_service
+import comfort_notifications
+import lark_commands
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 # 初始化Flask应用
@@ -106,6 +108,15 @@ def parse_non_negative_float(data, field_name):
     if not isinstance(value, (int, float)) or value < 0:
         raise ValueError(f'{field_name} must be a non-negative number')
     return float(value)
+
+
+def parse_optional_float(data, field_name):
+    value = data.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)):
+        return None
+    return round(float(value), 1)
 
 
 def build_comfort_analysis_response():
@@ -268,7 +279,8 @@ def update_building_votes(building_id):
     required_fields = ['too_cold', 'comfort', 'too_warm', 'total']
     if not data or not all(f in data for f in required_fields):
         return jsonify({'error': 'Missing vote data'}), 400
-    if not db.get_building_by_id(building_id):
+    building = db.get_building_by_id(building_id)
+    if not building:
         return jsonify({'error': 'Building not found'}), 404
 
     too_cold = data['too_cold']
@@ -279,6 +291,14 @@ def update_building_votes(building_id):
         return jsonify({'error': 'Vote values must be non-negative integers'}), 400
     if total != too_cold + comfort + too_warm:
         return jsonify({'error': 'Total must equal too_cold + comfort + too_warm'}), 400
+
+    target_date = data.get('vote_date', date.today())
+    sensor_snapshot = data.get('sensor') if isinstance(data.get('sensor'), dict) else {}
+    sensor_temperature = parse_optional_float(sensor_snapshot, 'temperature')
+    sensor_humidity = parse_optional_float(sensor_snapshot, 'humidity')
+    sensor_co2 = parse_optional_float(sensor_snapshot, 'co2')
+    sensor_read_time = str(sensor_snapshot.get('read_time', '') or '')
+    previous_votes = db.ensure_votes_for_date(building_id, target_date)
     
     db.update_votes(
         building_id,
@@ -286,9 +306,89 @@ def update_building_votes(building_id):
         comfort,
         too_warm,
         total,
-        data.get('vote_date', date.today())
+        target_date
     )
-    return jsonify({'message': 'Votes updated successfully', 'building_id': building_id})
+
+    logged_events = []
+    event_deltas = {
+        'too_cold': too_cold - previous_votes.get('too_cold', 0),
+        'comfort': comfort - previous_votes.get('comfort', 0),
+        'too_warm': too_warm - previous_votes.get('too_warm', 0),
+    }
+    for vote_type, delta_count in event_deltas.items():
+        if delta_count <= 0:
+            continue
+        event = {
+            'building_id': building_id,
+            'vote_type': vote_type,
+            'delta_count': delta_count,
+            'total_after': total,
+            'too_cold_after': too_cold,
+            'comfort_after': comfort,
+            'too_warm_after': too_warm,
+            'sensor_temperature': sensor_temperature,
+            'sensor_humidity': sensor_humidity,
+            'sensor_co2': sensor_co2,
+            'sensor_read_time': sensor_read_time,
+        }
+        event_id = db.add_comfort_event(**event)
+        event['id'] = event_id
+        notification_result = comfort_notifications.send_comfort_event_alert(event, building)
+        db.update_comfort_event_notification(
+            event_id,
+            notification_result['status'],
+            notification_result.get('error', ''),
+        )
+        logged_events.append({
+            **event,
+            'notification_status': notification_result['status'],
+            'notification_error': notification_result.get('error', ''),
+        })
+
+    return jsonify({
+        'message': 'Votes updated successfully',
+        'building_id': building_id,
+        'comfort_events': logged_events,
+    })
+
+
+@app.route('/api/operator/comfort-events', methods=['GET'])
+@require_operator_auth
+def get_comfort_events():
+    limit = request.args.get('limit', default=100, type=int)
+    building_id = request.args.get('building_id', default=None, type=int)
+    limit = max(1, min(limit, 500))
+    return jsonify({
+        'events': db.get_comfort_events(limit=limit, building_id=building_id),
+    })
+
+
+@app.route('/api/operator/comfort-events/summary', methods=['GET'])
+@require_operator_auth
+def get_comfort_event_summary():
+    days = request.args.get('days', default=7, type=int)
+    building_id = request.args.get('building_id', default=None, type=int)
+    days = max(1, min(days, 365))
+    return jsonify({
+        'days': days,
+        'summary': db.get_comfort_event_summary(days=days, building_id=building_id),
+    })
+
+
+@app.route('/api/lark/events', methods=['POST'])
+def handle_lark_events():
+    payload = request.get_json(silent=True) or {}
+    if payload.get('type') == 'url_verification' and payload.get('challenge'):
+        return jsonify({'challenge': payload['challenge']})
+
+    expected_token = comfort_notifications.LARK_VERIFICATION_TOKEN
+    header = payload.get('header') if isinstance(payload.get('header'), dict) else {}
+    payload_token = str(payload.get('token', '') or header.get('token', '') or '')
+    if expected_token and payload_token != expected_token:
+        return jsonify({'error': 'Invalid Lark verification token'}), 403
+
+    result = lark_commands.handle_lark_payload(payload)
+    return jsonify(result)
 
 # ========== 传感器接口 ==========
 @app.route('/api/sensor/<int:building_id>', methods=['GET'])

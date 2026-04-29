@@ -262,7 +262,9 @@ export function getVotes(buildingName: string) {
 
 export function updateVotes(
   buildingId: number,
-  payload: Pick<BuildingVotes, 'too_cold' | 'comfort' | 'too_warm' | 'total'>
+  payload: Pick<BuildingVotes, 'too_cold' | 'comfort' | 'too_warm' | 'total'> & {
+    sensor?: Pick<SensorReading, 'temperature' | 'humidity' | 'co2' | 'read_time'>;
+  }
 ) {
   return request<{ message: string; building_id: number }>(`/api/votes/${buildingId}`, {
     method: 'PUT',

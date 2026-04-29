@@ -32,6 +32,7 @@ def init_db():
         conn.executescript(f.read())
 
     _ensure_building_settings_columns(conn)
+    _ensure_comfort_events_table(conn)
     _deduplicate_votes(conn)
     
     # 初始化默认建筑数据
@@ -109,6 +110,113 @@ def _ensure_building_settings_columns(conn):
     for column_name, column_sql in column_specs.items():
         if column_name not in columns:
             conn.execute(f'ALTER TABLE building_settings ADD COLUMN {column_name} {column_sql}')
+
+
+def _ensure_comfort_events_table(conn):
+    existing_table = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'comfort_events'"
+    ).fetchone()
+    if existing_table and "'comfort'" not in (existing_table['sql'] or ''):
+        conn.execute('ALTER TABLE comfort_events RENAME TO comfort_events_old')
+        _create_comfort_events_table(conn)
+        conn.execute(
+            '''
+            INSERT INTO comfort_events (
+                id,
+                building_id,
+                vote_type,
+                delta_count,
+                total_after,
+                too_cold_after,
+                comfort_after,
+                too_warm_after,
+                sensor_temperature,
+                sensor_humidity,
+                sensor_co2,
+                sensor_read_time,
+                notification_status,
+                notification_error,
+                created_at
+            )
+            SELECT
+                id,
+                building_id,
+                vote_type,
+                delta_count,
+                total_after,
+                too_cold_after,
+                0,
+                too_warm_after,
+                NULL,
+                NULL,
+                NULL,
+                '',
+                notification_status,
+                notification_error,
+                created_at
+            FROM comfort_events_old
+            '''
+        )
+        conn.execute('DROP TABLE comfort_events_old')
+    else:
+        _create_comfort_events_table(conn)
+
+    columns = {
+        row['name']
+        for row in conn.execute("PRAGMA table_info(comfort_events)").fetchall()
+    }
+    if 'comfort_after' not in columns:
+        conn.execute('ALTER TABLE comfort_events ADD COLUMN comfort_after INTEGER NOT NULL DEFAULT 0')
+    sensor_column_specs = {
+        'sensor_temperature': 'REAL',
+        'sensor_humidity': 'REAL',
+        'sensor_co2': 'REAL',
+        'sensor_read_time': "TEXT DEFAULT ''",
+    }
+    for column_name, column_sql in sensor_column_specs.items():
+        if column_name not in columns:
+            conn.execute(f'ALTER TABLE comfort_events ADD COLUMN {column_name} {column_sql}')
+    _ensure_comfort_events_indexes(conn)
+
+
+def _create_comfort_events_table(conn):
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS comfort_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            building_id INTEGER NOT NULL,
+            vote_type TEXT NOT NULL CHECK (vote_type IN ('too_cold', 'comfort', 'too_warm')),
+            delta_count INTEGER NOT NULL DEFAULT 1,
+            total_after INTEGER NOT NULL DEFAULT 0,
+            too_cold_after INTEGER NOT NULL DEFAULT 0,
+            comfort_after INTEGER NOT NULL DEFAULT 0,
+            too_warm_after INTEGER NOT NULL DEFAULT 0,
+            sensor_temperature REAL,
+            sensor_humidity REAL,
+            sensor_co2 REAL,
+            sensor_read_time TEXT DEFAULT '',
+            notification_status TEXT DEFAULT 'pending',
+            notification_error TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (building_id) REFERENCES buildings(id)
+        )
+        '''
+    )
+
+
+def _ensure_comfort_events_indexes(conn):
+    conn.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS idx_comfort_events_created_at
+        ON comfort_events (created_at)
+        '''
+    )
+    conn.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS idx_comfort_events_building_created_at
+        ON comfort_events (building_id, created_at)
+        '''
+    )
 
 
 def _ensure_default_building_settings(conn):
@@ -280,6 +388,131 @@ def update_votes(building_id, too_cold, comfort, too_warm, total, vote_date=None
         )
     conn.commit()
     conn.close()
+
+
+def add_comfort_event(
+    building_id,
+    vote_type,
+    delta_count,
+    total_after,
+    too_cold_after,
+    comfort_after,
+    too_warm_after,
+    sensor_temperature=None,
+    sensor_humidity=None,
+    sensor_co2=None,
+    sensor_read_time='',
+    notification_status='pending',
+    notification_error='',
+):
+    conn = get_db_connection()
+    cursor = conn.execute(
+        '''
+        INSERT INTO comfort_events (
+            building_id,
+            vote_type,
+            delta_count,
+            total_after,
+            too_cold_after,
+            comfort_after,
+            too_warm_after,
+            sensor_temperature,
+            sensor_humidity,
+            sensor_co2,
+            sensor_read_time,
+            notification_status,
+            notification_error
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            building_id,
+            vote_type,
+            delta_count,
+            total_after,
+            too_cold_after,
+            comfort_after,
+            too_warm_after,
+            sensor_temperature,
+            sensor_humidity,
+            sensor_co2,
+            sensor_read_time,
+            notification_status,
+            notification_error,
+        ),
+    )
+    event_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return event_id
+
+
+def update_comfort_event_notification(event_id, notification_status, notification_error=''):
+    conn = get_db_connection()
+    conn.execute(
+        '''
+        UPDATE comfort_events
+        SET notification_status = ?, notification_error = ?
+        WHERE id = ?
+        ''',
+        (notification_status, notification_error, event_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_comfort_events(limit=100, building_id=None):
+    conn = get_db_connection()
+    params = []
+    where_sql = ''
+    if building_id is not None:
+        where_sql = 'WHERE ce.building_id = ?'
+        params.append(building_id)
+    params.append(limit)
+    rows = conn.execute(
+        f'''
+        SELECT
+            ce.*,
+            b.name AS building_name
+        FROM comfort_events ce
+        JOIN buildings b ON b.id = ce.building_id
+        {where_sql}
+        ORDER BY ce.id DESC
+        LIMIT ?
+        ''',
+        params,
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_comfort_event_summary(days=7, building_id=None):
+    conn = get_db_connection()
+    params = [f'-{days} days']
+    where_parts = ["ce.created_at >= datetime('now', ?)"]
+    if building_id is not None:
+        where_parts.append('ce.building_id = ?')
+        params.append(building_id)
+    where_sql = ' AND '.join(where_parts)
+    rows = conn.execute(
+        f'''
+        SELECT
+            b.id AS building_id,
+            b.name AS building_name,
+            ce.vote_type,
+            SUM(ce.delta_count) AS event_count,
+            COUNT(*) AS interaction_count,
+            MAX(ce.created_at) AS latest_event_at
+        FROM comfort_events ce
+        JOIN buildings b ON b.id = ce.building_id
+        WHERE {where_sql}
+        GROUP BY b.id, b.name, ce.vote_type
+        ORDER BY event_count DESC, latest_event_at DESC
+        ''',
+        params,
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 def add_votes(building_id, too_cold=0, comfort=0, too_warm=0, total=0, vote_date=None):
     """新增投票数据"""

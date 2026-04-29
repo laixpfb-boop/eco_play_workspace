@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Start EcoPlay Device
+Comment=Start backend, frontend, OpenClaw, LLM, and callback tunnel
+Exec=/home/ecoplay/eco_play_workspace/scripts/start_ecoplay_device.sh --desktop
+Terminal=true
+Categories=Utility;

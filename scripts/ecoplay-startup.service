@@ -1,0 +1,12 @@
+[Unit]
+Description=Start EcoPlay device stack
+After=default.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ecoplay/eco_play_workspace
+ExecStart=/home/ecoplay/eco_play_workspace/scripts/start_ecoplay_device.sh --service
+
+[Install]
+WantedBy=default.target

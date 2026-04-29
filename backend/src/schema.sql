@@ -34,6 +34,32 @@ CREATE TABLE IF NOT EXISTS sensor_data (
 CREATE INDEX IF NOT EXISTS idx_sensor_data_building_read_time
 ON sensor_data (building_id, read_time);
 
+-- Per-interaction comfort event history for alerts and future summaries
+CREATE TABLE IF NOT EXISTS comfort_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    building_id INTEGER NOT NULL,
+    vote_type TEXT NOT NULL CHECK (vote_type IN ('too_cold', 'comfort', 'too_warm')),
+    delta_count INTEGER NOT NULL DEFAULT 1,
+    total_after INTEGER NOT NULL DEFAULT 0,
+    too_cold_after INTEGER NOT NULL DEFAULT 0,
+    comfort_after INTEGER NOT NULL DEFAULT 0,
+    too_warm_after INTEGER NOT NULL DEFAULT 0,
+    sensor_temperature REAL,
+    sensor_humidity REAL,
+    sensor_co2 REAL,
+    sensor_read_time TEXT DEFAULT '',
+    notification_status TEXT DEFAULT 'pending',
+    notification_error TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (building_id) REFERENCES buildings(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_comfort_events_created_at
+ON comfort_events (created_at);
+
+CREATE INDEX IF NOT EXISTS idx_comfort_events_building_created_at
+ON comfort_events (building_id, created_at);
+
 -- 建筑默认配置
 CREATE TABLE IF NOT EXISTS building_settings (
     building_id INTEGER PRIMARY KEY,

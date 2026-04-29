@@ -43,6 +43,7 @@ const fallbackSensor: SensorReading = {
   read_time: '',
 };
 const DEFAULT_BUILDING_NAME = 'Sustainability Office';
+const SENSOR_REFRESH_MS = 3000;
 
 function buildEmptyVotes(buildingId: number): BuildingVotes {
   return {
@@ -204,7 +205,7 @@ export function VotePage() {
     loadBuildingData(true);
     const intervalId = window.setInterval(() => {
       loadBuildingData(false);
-    }, 5000);
+    }, SENSOR_REFRESH_MS);
 
     return () => {
       cancelled = true;
@@ -269,6 +270,12 @@ export function VotePage() {
         comfort: nextVotes.comfort,
         too_warm: nextVotes.too_warm,
         total: nextVotes.total,
+        sensor: {
+          temperature: sensor.temperature,
+          humidity: sensor.humidity,
+          co2: sensor.co2,
+          read_time: sensor.read_time,
+        },
       });
       // Ensure UI stays at least on the just-submitted count.
       setVotes(nextVotes);
