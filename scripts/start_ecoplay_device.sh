@@ -115,7 +115,7 @@ start_llm() {
   else
     run_bg "llm" "/home/ecoplay/llama.cpp" "$LOG_DIR/llama-server.log" \
       "$LLAMA_SERVER" --host 0.0.0.0 --port "$LLM_PORT" \
-      -m "$LLAMA_MODEL" -c 2048 --threads 4
+      -m "$LLAMA_MODEL" -c 4096 --threads 4
   fi
   wait_for_port "$LLM_PORT" "LLM server" 60 || true
 }
@@ -148,7 +148,7 @@ start_lark_tunnel() {
 
 show_status() {
   echo "--- Status ---"
-  ss -ltnp 2>/dev/null | grep -E ":(5001|5173|8080|18789|20241) " || true
+  ss -ltnp 2>/dev/null | grep -E ":(5001|5173|8080|18789|18790) " || true
   local lan_ip
   lan_ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.' | grep -vE '^172\.1[78]\.' | head -1 || true)"
   local tailscale_ip
