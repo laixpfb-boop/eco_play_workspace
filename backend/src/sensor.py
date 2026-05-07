@@ -5,6 +5,12 @@ import time
 from datetime import datetime
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
+except ImportError:
+    pass
+
+try:
     from smbus2 import SMBus, i2c_msg
     SENSOR_AVAILABLE = True
 except ImportError:
@@ -13,7 +19,7 @@ except ImportError:
     SENSOR_AVAILABLE = False
 
 
-REAL_SENSOR_BUILDING_ID = 7
+REAL_SENSOR_BUILDING_ID = int(os.getenv('ECOPLAY_REAL_SENSOR_BUILDING_ID', '7'))
 REAL_SENSOR_BUILDING_NAME = 'Sustainability Office'
 PRIMARY_SENSOR_INTERFACE = {
     'interface_id': 'primary_scd4x',
