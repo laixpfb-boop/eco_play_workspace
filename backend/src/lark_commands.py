@@ -1,12 +1,15 @@
 import json
+import os
 import re
 
+import chat_service
 import comfort_notifications
 import db
 
 
 COMMAND_PREFIXES = ('ecoplay', '/ecoplay', '@ecoplay')
 BARE_COMMAND_PREFIXES = ('summary', 'stats', 'history', 'log', 'help')
+CHAT_PREFIXES = ('chat', 'ask', 'question')
 VOTE_LABELS = {
     'too_cold': 'Too Cold',
     'comfort': 'Comfort',
@@ -40,6 +43,10 @@ def _normalize_command_text(text):
     return text
 
 
+def _has_bot_mention(text):
+    return bool(re.search(r'<at[^>]*>.*?</at>', text, flags=re.IGNORECASE))
+
+
 def _is_ecoplay_command(text):
     lower = text.lower().strip()
     return lower.startswith(COMMAND_PREFIXES) or lower.startswith(BARE_COMMAND_PREFIXES)
@@ -68,6 +75,62 @@ def _find_building_id(text):
         if building['name'].lower() in lower:
             return building['id']
     return None
+
+
+def _default_lark_building_id():
+    raw_value = (
+        os.getenv('ECOPLAY_LARK_CHAT_BUILDING_ID')
+        or os.getenv('ECOPLAY_REAL_SENSOR_BUILDING_ID')
+        or '13'
+    )
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return 13
+
+
+def _strip_prefix(text, prefix):
+    if text.lower() == prefix:
+        return ''
+    return text[len(prefix):].strip()
+
+
+def _extract_llm_prompt(original_text, command_text):
+    lower = command_text.lower().strip()
+    if not lower:
+        return ''
+
+    for prefix in CHAT_PREFIXES:
+        if lower == prefix or lower.startswith(f'{prefix} '):
+            return _strip_prefix(command_text, prefix)
+
+    for prefix in COMMAND_PREFIXES:
+        if lower == prefix:
+            return ''
+        if lower.startswith(f'{prefix} '):
+            remaining = _strip_prefix(command_text, prefix)
+            remaining_lower = remaining.lower()
+            for chat_prefix in CHAT_PREFIXES:
+                if remaining_lower == chat_prefix or remaining_lower.startswith(f'{chat_prefix} '):
+                    return _strip_prefix(remaining, chat_prefix)
+            return remaining
+
+    if _has_bot_mention(original_text):
+        return command_text
+
+    return ''
+
+
+def _build_llm_reply(prompt):
+    building_id = _find_building_id(prompt) or _default_lark_building_id()
+    session_id = db.create_chat_session(building_id=building_id, room_label='Lark')
+    result = chat_service.process_chat(
+        session_id,
+        prompt,
+        building_id=building_id,
+        room_label='Lark',
+    )
+    return result['reply']
 
 
 def _format_summary(rows, days):
@@ -109,7 +172,7 @@ def _format_history(events, limit):
 
 def build_reply_for_text(text):
     command_text = _normalize_command_text(text)
-    if not _is_ecoplay_command(command_text):
+    if not _is_ecoplay_command(command_text) and not _has_bot_mention(text):
         return None
 
     lower = command_text.lower()
@@ -135,9 +198,13 @@ def build_reply_for_text(text):
         rows = db.get_comfort_event_summary(days=days, building_id=building_id)
         return _format_summary(rows, days)
 
+    llm_prompt = _extract_llm_prompt(text, command_text)
+    if llm_prompt:
+        return _build_llm_reply(llm_prompt)
+
     return (
         'I heard EcoPlay, but I did not recognize the command. '
-        'Try: ecoplay summary 7 days or ecoplay history today.'
+        'Try: ecoplay summary 7 days, ecoplay history today, or ecoplay chat what is the current CO2?'
     )
 
 

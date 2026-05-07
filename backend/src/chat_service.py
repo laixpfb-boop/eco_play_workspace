@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dotenv import load_dotenv
@@ -320,18 +321,28 @@ def build_status_reply(context):
 
 
 def is_status_lookup(lower_message):
-    has_status_term = any(keyword in lower_message for keyword in STATUS_KEYWORDS)
-    has_question_term = '?' in lower_message or any(keyword in lower_message for keyword in STATUS_QUESTION_KEYWORDS)
+    has_status_term = any(contains_keyword(lower_message, keyword) for keyword in STATUS_KEYWORDS)
+    has_question_term = '?' in lower_message or any(
+        contains_keyword(lower_message, keyword) for keyword in STATUS_QUESTION_KEYWORDS
+    )
     return has_status_term and has_question_term and not is_comfort_report(lower_message)
 
 
 def is_comfort_report(lower_message):
-    return any(keyword in lower_message for keyword in COMFORT_REPORT_KEYWORDS)
+    return any(contains_keyword(lower_message, keyword) for keyword in COMFORT_REPORT_KEYWORDS)
+
+
+def contains_keyword(lower_message, keyword):
+    if not keyword:
+        return False
+    if re.fullmatch(r'[a-z0-9_]+', keyword):
+        return re.search(rf'\b{re.escape(keyword)}\b', lower_message) is not None
+    return keyword in lower_message
 
 
 def infer_request_type(lower_message):
     for request_type, keywords in SERVICE_KEYWORDS.items():
-        if any(keyword in lower_message for keyword in keywords):
+        if any(contains_keyword(lower_message, keyword) for keyword in keywords):
             return request_type
     return 'other'
 
