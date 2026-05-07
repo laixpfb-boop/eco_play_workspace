@@ -1,5 +1,9 @@
+import base64
+import hashlib
+import hmac
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -15,6 +19,11 @@ LARK_WEBHOOK_URL = (
     os.getenv('LARK_WEBHOOK_URL', '').strip()
     or os.getenv('FEISHU_WEBHOOK_URL', '').strip()
     or os.getenv('OPENCLAW_LARK_WEBHOOK_URL', '').strip()
+)
+LARK_WEBHOOK_SECRET = (
+    os.getenv('LARK_WEBHOOK_SECRET', '').strip()
+    or os.getenv('FEISHU_WEBHOOK_SECRET', '').strip()
+    or os.getenv('OPENCLAW_LARK_WEBHOOK_SECRET', '').strip()
 )
 ALERT_SOURCE_NAME = os.getenv('ECOPLAY_ALERT_SOURCE_NAME', 'EcoPlay')
 LARK_VERIFICATION_TOKEN = os.getenv('LARK_VERIFICATION_TOKEN', '').strip()
@@ -71,12 +80,26 @@ def send_lark_text(message):
             'error': 'LARK_WEBHOOK_URL is not configured in backend/.env.',
         }
 
-    payload = json.dumps({
+    payload_body = {
         'msg_type': 'text',
         'content': {
             'text': message,
         },
-    }).encode('utf-8')
+    }
+    if LARK_WEBHOOK_SECRET:
+        timestamp = str(int(time.time()))
+        string_to_sign = f'{timestamp}\n{LARK_WEBHOOK_SECRET}'
+        signature = hmac.new(
+            string_to_sign.encode('utf-8'),
+            b'',
+            digestmod=hashlib.sha256,
+        ).digest()
+        payload_body.update({
+            'timestamp': timestamp,
+            'sign': base64.b64encode(signature).decode('utf-8'),
+        })
+
+    payload = json.dumps(payload_body).encode('utf-8')
     request = urllib.request.Request(
         LARK_WEBHOOK_URL,
         data=payload,
@@ -87,6 +110,13 @@ def send_lark_text(message):
         with urllib.request.urlopen(request, timeout=8) as response:
             body = response.read().decode('utf-8', errors='replace')
             if 200 <= response.status < 300:
+                lark_error = parse_lark_error(body)
+                if lark_error:
+                    return {
+                        'ok': False,
+                        'status': 'failed',
+                        'error': lark_error,
+                    }
                 return {'ok': True, 'status': 'sent', 'error': ''}
             return {
                 'ok': False,
@@ -104,6 +134,22 @@ def send_lark_text(message):
         return {'ok': False, 'status': 'failed', 'error': str(exc.reason)}
     except TimeoutError:
         return {'ok': False, 'status': 'failed', 'error': 'Lark webhook request timed out.'}
+
+
+def parse_lark_error(body):
+    if not body:
+        return ''
+    try:
+        result = json.loads(body)
+    except json.JSONDecodeError:
+        return ''
+
+    code = result.get('code', result.get('StatusCode'))
+    if code in (None, 0):
+        return ''
+
+    message = result.get('msg') or result.get('message') or result.get('StatusMessage') or body[:300]
+    return f'Lark returned code {code}: {message}'
 
 
 def send_comfort_event_alert(event, building):
