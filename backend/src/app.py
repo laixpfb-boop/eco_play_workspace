@@ -403,6 +403,8 @@ def get_comfort_event_summary():
     })
 
 
+@app.route('/', methods=['POST'])
+@app.route('/lark/events', methods=['POST'])
 @app.route('/api/lark/events', methods=['POST'])
 def handle_lark_events():
     payload = request.get_json(silent=True) or {}
