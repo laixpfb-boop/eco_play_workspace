@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=EcoPlay Frontend 60%
+Comment=Open the EcoPlay frontend at 60 percent scale
+Exec=/usr/bin/chromium --password-store=basic --no-first-run --disable-sync --app=http://127.0.0.1:5173/user?building=Sustainability%%20Office --force-device-scale-factor=0.6 --start-fullscreen --window-position=0,0 --window-size=1920,1080
+Terminal=false
+Categories=Utility;
