@@ -8,8 +8,9 @@ import db
 
 
 COMMAND_PREFIXES = ('ecoplay', '/ecoplay', '@ecoplay')
-BARE_COMMAND_PREFIXES = ('summary', 'stats', 'history', 'log', 'help')
+BARE_COMMAND_PREFIXES = ('summary', 'stats', 'history', 'histroy', 'log', 'help')
 CHAT_PREFIXES = ('chat', 'ask', 'question')
+HISTORY_KEYWORDS = ('history', 'histroy', 'log')
 VOTE_LABELS = {
     'too_cold': 'Too Cold',
     'comfort': 'Comfort',
@@ -189,7 +190,7 @@ def build_reply_for_text(text):
 
     days = _parse_days(command_text)
     building_id = _find_building_id(command_text)
-    if 'history' in lower or 'log' in lower:
+    if any(keyword in lower for keyword in HISTORY_KEYWORDS):
         limit = _parse_limit(command_text)
         events = db.get_comfort_events(limit=limit, building_id=building_id)
         return _format_history(events, limit)
