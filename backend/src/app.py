@@ -3,6 +3,7 @@ from flask_cors import CORS
 import sqlite3
 import csv
 import io
+import json
 import os
 import secrets
 import db
@@ -380,6 +381,31 @@ def read_vote_press_sensor_snapshot(building_id):
         }
 
 
+def log_lark_event(payload, result=None, status_code=200, error=''):
+    try:
+        log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        header = payload.get('header') if isinstance(payload.get('header'), dict) else {}
+        event = payload.get('event') if isinstance(payload.get('event'), dict) else {}
+        message = event.get('message') if isinstance(event.get('message'), dict) else {}
+        entry = {
+            'time': datetime.utcnow().isoformat() + 'Z',
+            'path': request.path,
+            'status_code': status_code,
+            'payload_type': payload.get('type', ''),
+            'event_type': header.get('event_type', ''),
+            'has_token': bool(payload.get('token') or header.get('token')),
+            'message_type': message.get('message_type', ''),
+            'handled': result.get('handled') if isinstance(result, dict) else None,
+            'notification_status': result.get('notification_status') if isinstance(result, dict) else '',
+            'error': error,
+        }
+        with open(os.path.join(log_dir, 'lark_events.log'), 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    except Exception as exc:
+        print(f'Lark event logging failed: {exc}')
+
+
 @app.route('/api/operator/comfort-events', methods=['GET'])
 @require_operator_auth
 def get_comfort_events():
@@ -409,15 +435,18 @@ def get_comfort_event_summary():
 def handle_lark_events():
     payload = request.get_json(silent=True) or {}
     if payload.get('type') == 'url_verification' and payload.get('challenge'):
+        log_lark_event(payload)
         return jsonify({'challenge': payload['challenge']})
 
     expected_token = comfort_notifications.LARK_VERIFICATION_TOKEN
     header = payload.get('header') if isinstance(payload.get('header'), dict) else {}
     payload_token = str(payload.get('token', '') or header.get('token', '') or '')
     if expected_token and payload_token != expected_token:
+        log_lark_event(payload, status_code=403, error='Invalid Lark verification token')
         return jsonify({'error': 'Invalid Lark verification token'}), 403
 
     result = lark_commands.handle_lark_payload(payload)
+    log_lark_event(payload, result=result)
     return jsonify(result)
 
 # ========== 传感器接口 ==========
