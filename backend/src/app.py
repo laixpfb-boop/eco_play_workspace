@@ -293,7 +293,7 @@ def update_building_votes(building_id):
         return jsonify({'error': 'Total must equal too_cold + comfort + too_warm'}), 400
 
     target_date = data.get('vote_date', date.today())
-    sensor_snapshot = data.get('sensor') if isinstance(data.get('sensor'), dict) else {}
+    sensor_snapshot = read_vote_press_sensor_snapshot(building_id)
     sensor_temperature = parse_optional_float(sensor_snapshot, 'temperature')
     sensor_humidity = parse_optional_float(sensor_snapshot, 'humidity')
     sensor_co2 = parse_optional_float(sensor_snapshot, 'co2')
@@ -350,6 +350,34 @@ def update_building_votes(building_id):
         'building_id': building_id,
         'comfort_events': logged_events,
     })
+
+
+def read_vote_press_sensor_snapshot(building_id):
+    building_settings = db.get_building_settings(building_id) or {}
+    try:
+        temp, humi, sensor_status = sensor.read_sensor_snapshot(
+            building_id,
+            default_temperature=building_settings.get('default_temperature'),
+            default_humidity=building_settings.get('default_humidity'),
+            default_co2=building_settings.get('default_co2'),
+        )
+        co2 = round(float(sensor_status.get('co2', building_settings.get('default_co2', 650.0))), 1)
+        return {
+            'temperature': temp,
+            'humidity': humi,
+            'co2': co2,
+            'read_time': sensor_status.get('checked_at') or datetime.utcnow().isoformat() + 'Z',
+        }
+    except Exception as exc:
+        print(f'Vote press sensor read failed: {exc}')
+        request_sensor = request.get_json(silent=True) or {}
+        sensor_snapshot = request_sensor.get('sensor') if isinstance(request_sensor.get('sensor'), dict) else {}
+        return {
+            'temperature': sensor_snapshot.get('temperature', building_settings.get('default_temperature')),
+            'humidity': sensor_snapshot.get('humidity', building_settings.get('default_humidity')),
+            'co2': sensor_snapshot.get('co2', building_settings.get('default_co2')),
+            'read_time': sensor_snapshot.get('read_time') or datetime.utcnow().isoformat() + 'Z',
+        }
 
 
 @app.route('/api/operator/comfort-events', methods=['GET'])
