@@ -55,7 +55,7 @@ def _is_ecoplay_command(text):
 
 def _parse_days(text):
     lower = text.lower()
-    if 'today' in lower:
+    if any(keyword in lower for keyword in ('today', 'toda', 'tdy')):
         return 1
     match = re.search(r'(\d+)\s*(day|days|d)\b', lower)
     if match:
