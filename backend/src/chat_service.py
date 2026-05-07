@@ -4,7 +4,10 @@ import urllib.error
 import urllib.request
 from dotenv import load_dotenv
 
-from . import db
+try:
+    from . import db
+except ImportError:
+    import db
 
 load_dotenv()
 
